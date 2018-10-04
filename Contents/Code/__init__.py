@@ -90,10 +90,11 @@ class xbmcnfotv(Agent.TV_Shows):
 			return text # leave as is
 		return re.sub("&#?\w+;", fixup, text)
 
-##### search function #####
-	def search(self, results, media, lang):
+
+
+	def _log_function_entry(self, func_name):
 		self.DLog("++++++++++++++++++++++++")
-		self.DLog("Entering search function")
+		self.DLog("Entering "+func_name+" function")
 		self.DLog("++++++++++++++++++++++++")
 		Log ("" + self.name + " Version: " + self.ver)
 		self.DLog("Plex Server Version: " + Platform.ServerVersion)
@@ -103,6 +104,10 @@ class xbmcnfotv(Agent.TV_Shows):
 		else:
 			Log ('Agents debug logging is disabled!')
 
+##### search function #####
+	def search(self, results, media, lang):
+		self._log_function_entry('search')
+
 		id = media.id
 		path1 = None
 		try:
@@ -111,6 +116,7 @@ class xbmcnfotv(Agent.TV_Shows):
 			filename = os.path.basename(String.Unquote(nfoXML.get('file').encode('utf-8')))
 			path1 = os.path.dirname(String.Unquote(nfoXML.get('file').encode('utf-8')))
 		except:
+			raise
 			self.DLog ('Exception nfoXML.get(''file'')!')
 			self.DLog ("Traceback: " + traceback.format_exc())
 			pass
@@ -202,16 +208,7 @@ class xbmcnfotv(Agent.TV_Shows):
 
 ##### update Function #####
 	def update(self, metadata, media, lang):
-		self.DLog("++++++++++++++++++++++++")
-		self.DLog("Entering update function")
-		self.DLog("++++++++++++++++++++++++")
-		Log ("" + self.name + " Version: " + self.ver)
-		self.DLog("Plex Server Version: " + Platform.ServerVersion)
-
-		if Prefs['debug']:
-			Log ('Agents debug logging is enabled!')
-		else:
-			Log ('Agents debug logging is disabled!')
+		self._log_function_entry('update')
 
 		Dict.Reset()
 		metadata.duration = None

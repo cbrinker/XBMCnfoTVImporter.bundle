@@ -631,7 +631,6 @@ class xbmcnfotv(Agent.TV_Shows):
 				Log("Actors:")
 				try: [Log("\t" + actor.name + " > " + actor.role) for actor in metadata.roles]
 				except: [Log("\t" + actor.name) for actor in metadata.roles]
-				except: Log("\t-")
 				Log("---------------------")
 
 		# Grabs the season data

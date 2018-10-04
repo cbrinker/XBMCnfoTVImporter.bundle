@@ -109,6 +109,10 @@ class MyTest(unittest.TestCase):
 		("&quot;&#&amp;&quot;", u'"&#&"'), # Try multiple
 	]:
 		self.assertEqual(self.target.unescape(_in), _out)
+
+    def test_log_function_entry(self):
+	self.assertEqual(self.target._log_function_entry('AFuncName'), None)
+	self.Log.assert_any_call(AnyStringWith('Entering AFuncName'))
 	
     @patch('os.path')
     def test_search(self, mock_path):

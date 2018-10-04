@@ -90,8 +90,6 @@ class xbmcnfotv(Agent.TV_Shows):
 			return text # leave as is
 		return re.sub("&#?\w+;", fixup, text)
 
-
-
 	def _log_function_entry(self, func_name):
 		self.DLog("++++++++++++++++++++++++")
 		self.DLog("Entering "+func_name+" function")
@@ -116,7 +114,6 @@ class xbmcnfotv(Agent.TV_Shows):
 			filename = os.path.basename(String.Unquote(nfoXML.get('file').encode('utf-8')))
 			path1 = os.path.dirname(String.Unquote(nfoXML.get('file').encode('utf-8')))
 		except:
-			raise
 			self.DLog ('Exception nfoXML.get(''file'')!')
 			self.DLog ("Traceback: " + traceback.format_exc())
 			pass

@@ -124,6 +124,23 @@ class MyTest(unittest.TestCase):
         ]:
                 self.assertEqual(self.target._generate_id_from_title(_in), _out)
 
+
+    def test_find_mediafile_for_id(self):
+        #self.XML.ElementFromURL.xpath.return_value =[{'file', 'value'}]
+        self.XML.ElementFromURL.return_value.xpath.return_value = [{'file':'file_value'}]
+        self.String.Unquote.side_effect = lambda x: x
+
+        self.assertEqual(self.target._find_mediafile_for_id('18879'), 'file_value')
+        self.XML.ElementFromURL.assert_called_once_with(AnyStringWith('18879'))
+        self.String.Unquote.assert_called_once_with('file_value')
+
+
+    def test_sanitize_nfo(self):
+        for _in, _out in [
+                ("<tvshow>\n<a>Hi&low</a>\n<x/>\n</tvshow>Some garbage", '<tvshow>\n<a>Hi&amp;low</a>\n</tvshow>'),
+        ]:
+                self.assertEqual(self.target._sanitize_nfo(_in, 'tvshow'), _out)
+
     @patch('os.path')
     def test_find_nfo_for_file(self, mock_path):
 
@@ -139,6 +156,21 @@ class MyTest(unittest.TestCase):
                 ([], 'a/b/c/d', None), # No files found
         ]:
                 self.assertEqual(self.target._find_nfo_for_file(_in), _out)
+
+    @patch('os.path')
+    def test_guess_title_by_mediafile(self, mock_path):
+        mock_path.basename = Mock(side_effect = lambda x: x.split("/")[-1])
+
+        for _in, _out in [
+            ('a/b/Dotted.Test.Show.S11E22.ext', 'Dotted Test Show'),
+            ('a/b/space show S11E22.ext', 'space show'),
+            ('a/b/Simple.S11E22.garbage.ext', 'Simple'),
+            ('a/b/Another Simple S11E22 garbage ext', 'Another Simple'),
+            ('', None),
+            ('a/b/non_conformant.ext', None),
+        ]:
+            self.assertEqual(self.target._guess_title_by_mediafile(_in), _out)
+
 
     @patch('os.path')
     def test_search(self, mock_path):

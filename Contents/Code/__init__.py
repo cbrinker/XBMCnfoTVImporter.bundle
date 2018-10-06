@@ -151,10 +151,7 @@ class xbmcnfotv(Agent.TV_Shows):
         filename = os.path.basename(mediafile)
         self.DLog("Guessing a title based on mediafile '%s'" % filename)
 
-        regtv = re.compile('(.+?)'
-            '[ .]S(\d\d?)E(\d\d?)'
-            '.*?'
-            '(?:[ .](\d{3}\d?p)|\Z)?')
+        regtv = re.compile('(.+?)[ .]S(\d\d?)E(\d\d?).*?\Z')
         matches = regtv.match(filename)
         if matches:
             out = matches.group(1).replace(".", " ")
@@ -182,7 +179,7 @@ class xbmcnfotv(Agent.TV_Shows):
 
     def _generate_id_from_title(self, title):
         ord3 = lambda x : '%.3d' % ord(x)
-        out = int(''.join(map(ord3, title)))
+        out = ''.join(map(ord3, title))
         out = str(abs(hash(int(out))))
         return out
 

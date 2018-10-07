@@ -126,7 +126,6 @@ class MyTest(unittest.TestCase):
 
 
     def test_find_mediafile_for_id(self):
-        #self.XML.ElementFromURL.xpath.return_value =[{'file', 'value'}]
         self.XML.ElementFromURL.return_value.xpath.return_value = [{'file':'file_value'}]
         self.String.Unquote.side_effect = lambda x: x
 
@@ -137,7 +136,7 @@ class MyTest(unittest.TestCase):
 
     def test_sanitize_nfo(self):
         for _in, _out in [
-                ("<tvshow>\n<a>Hi&low</a>\n<x/>\n</tvshow>Some garbage", '<tvshow>\n<a>Hi&amp;low</a>\n</tvshow>'),
+                ("<tvshow>\n<a>Hi&lo&amp;w</a>\n<x/>\n</tvshow>Some garbage", '<tvshow>\n<a>Hi&amp;lo&amp;w</a>\n</tvshow>'),
         ]:
                 self.assertEqual(self.target._sanitize_nfo(_in, 'tvshow'), _out)
 
@@ -170,6 +169,34 @@ class MyTest(unittest.TestCase):
             ('a/b/non_conformant.ext', None),
         ]:
             self.assertEqual(self.target._guess_title_by_mediafile(_in), _out)
+
+
+    def test_parse_tvshow_nfo_text(self):
+        tv_mock = MagicMock()
+        tv_mock.xpath.side_effect=lambda x: [Mock(text=inputs[x])]
+        self.XML.ElementFromString.return_value.xpath.return_value = [tv_mock]
+
+        # Bestcase
+        inputs = { 'id':'a', 'sorttitle':'b', 'title':'c', 'year':'1', 'extra':'a'}
+        outputs = { 'id':'a', 'sorttitle':'b', 'title':'c', 'year':1, }
+        self.assertEqual(self.target._parse_tvshow_nfo_text("_"), outputs)
+
+        # bad year
+        inputs = { 'id':'a', 'sorttitle':'b', 'title':'c', 'year':'nondigit', 'extra':'a'}
+        outputs = { 'id':'a', 'sorttitle':'b', 'title':'c', }
+        self.assertEqual(self.target._parse_tvshow_nfo_text("_"), outputs)
+        self.Log.assert_called_once_with(AnyStringWith('<year>'))
+
+        # all bad
+        inputs = {}
+        outputs = {}
+        self.assertEqual(self.target._parse_tvshow_nfo_text("_"), outputs)
+
+
+    def test_parse_tvshow_nfo_text_parse_error(self):
+        self.XML.ElementFromString.side_effect = Exception()
+        self.assertEqual(self.target._parse_tvshow_nfo_text("_"), {})
+        self.Log.assert_called_once_with(AnyStringWith('failed parsing'))
 
 
     @patch('os.path')

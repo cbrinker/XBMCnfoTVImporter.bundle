@@ -161,7 +161,7 @@ class xbmcnfotv(Agent.TV_Shows):
 
     def _parse_tvshow_nfo_text(self, nfo_text):
         out = {}
-        try: 
+        try:
             nfo_xml = XML.ElementFromString(nfo_text).xpath('//tvshow')[0]
         except:
             Log('ERROR: failed parsing tvshow XML in nfo file')
@@ -183,6 +183,17 @@ class xbmcnfotv(Agent.TV_Shows):
         out = str(abs(hash(int(out))))
         return out
 
+    def _extract_info_for_mediafile(self, mediafile):
+        out = {}
+        nfo_file = self._find_nfo_for_file(mediafile)
+        if nfo_file:
+            Log("Found nfo file at '%s', parsing" % nfo_file)
+            nfo_text = Core.storage.load(nfo_file)
+            nfo_text = self._sanitize_nfo(nfo_text, 'tvshow')
+            out = self._parse_tvshow_nfo_text(nfo_text)
+        return out
+
+
 ##### search function #####
     def search(self, results, media, lang):
         self._log_function_entry('search')
@@ -203,13 +214,7 @@ class xbmcnfotv(Agent.TV_Shows):
             self.DLog("Traceback: %s" % traceback.format_exc())
             return
 
-        nfo_file = self._find_nfo_for_file(mediafile)
-        if nfo_file:
-            Log("Found nfo file at '%s', parsing" % nfo_file)
-            nfo_text = Core.storage.load(nfo_file)
-            nfo_text = self._sanitize_nfo(nfo_text, 'tvshow')
-            nfo_info = self._parse_tvshow_nfo_text(nfo_text)
-            record.update(nfo_info)
+        record.update(self._extract_info_for_mediafile(mediafile))
 
         # Attempt to guess/fixup mising values
         if not record['title'] and mediafile:

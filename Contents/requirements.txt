@@ -1,3 +1,4 @@
 lxml
 mock
 python-dateutil
+coverage

@@ -151,13 +151,248 @@ class xbmcnfotv(Agent.TV_Shows):
         filename = os.path.basename(mediafile)
         self.DLog("Guessing a title based on mediafile '%s'" % filename)
 
-        regtv = re.compile('(.+?)[ .]S(\d\d?)E(\d\d?).*?\Z')
-        matches = regtv.match(filename)
+        matches = re.compile('(.+?)[ .]S(\d\d?)E(\d\d?).*?\Z').match(filename) 
         if matches:
             out = matches.group(1).replace(".", " ")
 
         self.DLog("Title guess of: '%s'" % out)
         return out
+
+    def _parse_rating(self, text):
+        out = 'NR'
+        matches = re.compile(r'(?:Rated\s)?(?P<mpaa>[A-z0-9-+/.]+(?:\s[0-9]+[A-z]?)?)?').match(text)
+        if matches.group('mpaa'):
+            out = matches.group('mpaa')
+        return out
+
+    def _parse_dt(self, s):
+        if Prefs['dayfirst']:
+            return parse(s, dayfirst=True)
+        else:
+            return parse(s)
+
+    def _get_premier(self, nfo_xml):
+        out = {}
+        for key in ['aired', 'premiered', 'dateadded']:
+            try:
+                s = nfo_xml.xpath(key)[0].text
+                if s:
+                    out['originally_available_at'] = self._parse_dt(s)
+                    break
+            except:
+                pass
+        return out
+
+    def _get_ratings(self, nfo_xml):
+        out = {}
+
+        rating = 0.0
+        try:
+            rating = nfo_xml.xpath("rating")[0].text.replace(',', '.')
+            rating = round(float(rating), 1)
+            out['rating'] = rating
+        except:
+            pass
+        return out
+
+
+    def _get_alt_ratings(self, nfo_xml):
+        #{'atr_ratings': [(provider,rating)]}
+
+        if not Prefs['altratings']:
+            return {}
+
+        allowed_ratings = Prefs['ratings']
+        if not allowed_ratings:
+            allowed_ratings = "ALL"
+
+        additional_ratings = []
+        try:
+            additional_ratings = nfo_xml.xpath('ratings')
+            if not additional_ratings:
+                return {}  # Not Found in xml, abort
+        except:
+            pass
+
+        alt_ratings = []
+        for addratingXML in additional_ratings:
+            for addrating in addratingXML:
+                try:
+                    rating_provider = str(addrating.attrib['moviedb'])
+                    value = str(addrating.text.replace(',', '.'))
+                    if rating_provider.lower() in PERCENT_RATINGS:
+                        value = value + "%"
+                    if allowed_ratings == "ALL" or rating_provider in allowed_ratings:
+                        alt_ratings.append((rating_provider, value))
+                except:
+                    self.DLog("Skipping additional rating without moviedb attribute!")
+        if len(alt_ratings):
+            return {'alt_ratings': alt_ratings}
+        else:
+            return {}
+
+    def _get_duration(self, nfo_xml):
+        out = {}
+        for key in ['durationinseconds', 'runtime']:
+            try:
+                v = nfo_xml.xpath(key)[0].text
+                v = int(re.compile('^([0-9]+)').findall(v)[0])
+                if key == 'durationinseconds':
+                    v *= 1000
+                elif key == 'runtime':
+                    v = self.time_convert(self, v)
+                if v:
+                    out['duration'] = v
+                    break
+            except:
+                pass
+        return out
+
+    def _build_summary(self, data):
+        # CONSTRUCT A SUMMARY
+        out = []
+        if Prefs['statusinsummary']:
+            out.append('Status: {}'.format(data['status']))
+
+        out.append(data['plot'])
+
+        alt_ratings = " | ".join("{}: {}".format(source, rating) for source, rating in data['alt_ratings'])
+
+        """
+        if Prefs['ratingspos'] == "front":
+            if Prefs['preserverating']:
+                metadata.summary = alt_ratings + self.unescape(" &#9733;\n\n") + metadata.summary
+            else:
+                metadata.summary = self.unescape("&#9733; ") + alt_ratings + self.unescape(" &#9733;\n\n") + metadata.summary
+        else:
+            metadata.summary = metadata.summary + self.unescape("\n\n&#9733; ") + alt_ratings + self.unescape(" &#9733;")
+        if Prefs['preserverating']:
+            tmp = self.unescape("{}{:.1f}{}".format(Prefs['beforerating'], data['rating'], Prefs['afterrating']))
+            out.insert(0, tmp)
+        """
+        return " | ".join(out)
+
+    def _get_collections_from_set(self, nfo_xml):
+        out = []
+        try:
+            set_xml = nfo_xml.xpath('set')[0]
+            has_names = set_xml.xpath('name')
+            if len(has_names):  # Found enhanced set tag name
+                out.append(has_names[0].text)
+            else:
+                out.append(set_xml.text)
+        except:
+            pass
+        return out
+
+    def _get_collections_from_tags(self, nfo_xml):
+        out = []
+        try:
+            for tag_xml in nfo_xml.xpath('tag'):
+                tags = [x.strip() for x in tag_xml.text.split('/')]
+                for tag in tags:
+                    out.append(tag)
+        except:
+            pass
+        return out
+
+
+    def _find_local_photo(self, actor_name, actor_thumb_path):
+        #TODO: Fix this up when unit testing. The code didn't originally work
+        actor_image_filename = actor_name.replace(' ', '_') + '.jpg'
+        local_path = os.path.join(actor_thumb_path, '.actors', actor_image_filename)
+        if not os.path.isfile(local_path):
+            return None
+
+        # file:///dir/dir/ ???
+        _, _, spath, _, _ = urlparse.urlsplit(actor_thumb_path)
+        basepath = os.path.basename(spath)
+        search_pos = spath.find(basepath)
+        add_pos = search_pos + len(basepath)
+        add_path = os.path.dirname(spath)[add_pos:]
+        if search_pos != -1 and add_path !='':
+            pass
+        else:
+            add_path = ''
+        return actor_thumb_path + add_path + '/' + basepath + '/.actors/' + actor_image_filename
+
+
+    def _find_global_photo(self, actor_name, actor_thumb_path):
+        #TODO: Fix this up when unit testing. The code didn't originally work
+        actor_image_filename = actor_name.replace(' ', '_') + '.jpg'
+        actor_image_path = actor_thumb_path + '/' + actor_image_filename
+
+        # Let's actually hit the URL
+        scheme, netloc, spath, qs, anchor = urlparse.urlsplit(actor_image_path)
+        spath = urllib.quote(spath, '/%')
+        qs = urllib.quote_plus(qs, ':&=')
+        actor_image_path_url = urlparse.urlunsplit((scheme, netloc, spath, qs, anchor))
+        response = urllib.urlopen(actor_image_path_url).code
+        if not response == 200:
+            return None
+
+        return actor_image_path
+
+
+    def _get_actor_photo(self, actor_name, actor_thumb):
+
+        if not actor_name:  # Without and actor name, default to thumb
+            return actor_thumb
+
+        actor_thumb_path = Prefs['athumbpath'].rstrip('/')  # Need to avoid empty here
+        if actor_thumb_path == "":
+            return actor_thumb
+
+        actor_thumb_engine = Prefs['athumblocation']
+        if actor_thumb_engine == 'local':
+            local_path = self._find_local_photo(actor_name, actor_thumb_path)
+            if local_path:
+                return local_path
+        elif actor_thumb_engine == 'global':
+            global_path = self._find_global_photo(actor_name, actor_thumb_path)
+            if global_path:
+                return global_path
+        elif actor_thumb_engine == 'link':
+            pass
+
+        return actor_thumb
+
+
+    def _get_actors(self, nfo_xml):
+        try:
+            actor_nodes = nfo_xml.xpath('actor')
+        except:
+            return {}
+
+        seen_roles = []
+        actors = []
+        for n, actor in enumerate(actor_nodes):
+            actor = {  # Defaulting to unknown
+                'name': 'Unknown Actor {}'.format(n+1),
+                'role': 'Unknown Role {}'.format(n+1),
+            }
+            try:
+                actor['name'] = actor.xpath('name')[0].text.strip()
+            except:
+                pass
+            try:
+                role = actor.xpath('role')[0].text.strip()
+                role_seen_count = seen_roles.count(role)
+                if role_seen_count:
+                    actor['role'] = '{} {}'.format(role, role_seen_count+1)
+                else:
+                    actor['role'] = role
+                seen_roles.append(role)
+            except:
+                pass
+            try:
+                actor['thumb'] = actor.xpath('thumb')[0].text.strip()
+            except:
+                pass
+            actor['photo'] = self._get_actor_photo(actor['name'], actor.get('thumb')) # empty str, or content
+            actors.append(actor)
+        return {'actors': actors}
+
 
     def _parse_tvshow_nfo_text(self, nfo_text):
         out = {}
@@ -167,14 +402,41 @@ class xbmcnfotv(Agent.TV_Shows):
             Log('ERROR: failed parsing tvshow XML in nfo file')
             return out
 
-        for key in ['id', 'sorttitle', 'title', 'year']:
+        nfo_xml = self.RemoveEmptyTags(nfo_xml)
+
+        for xml_key, out_key, cast in [
+            ('id','id', None),
+            ('sorttitle','sorttitle', None),
+            ('title','title', None),
+            ('studio','studio', None),
+            ('originaltitle','original_title', None),
+            ('year','year', int),
+            ('tagline','tagline', None), # Not supported by TVShow obj?
+            ('mpaa','content_rating', self._parse_rating),
+            ('genre','genres', lambda x:[y.strip() for y in x.split("/")]),
+            ('status','status',lambda x: x.strip()),
+            ('plot','plot', None), 
+        ]:
             try:
-                value = nfo_xml.xpath(key)[0].text
-                if key in ['year']:  # cast to numeric
-                    value = int(value)
-                out[key] = value
+                value = nfo_xml.xpath(xml_key)[0].text
+                if cast:
+                    value = cast(value)
+                out[out_key] = value
             except:
-                self.DLog("No <%s> tag found in nfo file." % key)
+                self.DLog("No <%s> tag found in nfo file." % out_key)
+
+        out.update(self._get_premier(nfo_xml))
+        out.update(self._get_ratings(nfo_xml))
+        out.update(self._get_duration(nfo_xml))
+        out.update(self._get_alt_ratings(nfo_xml))
+        out.update(self._get_actors(nfo_xml))
+
+        collections = []
+        collections += self._get_collections_from_set(nfo_xml)
+        collections += self._get_collections_from_tags(nfo_xml)
+        if len(collections):
+            out['collections'] = collections
+
         return out
 
     def _generate_id_from_title(self, title):
@@ -182,6 +444,7 @@ class xbmcnfotv(Agent.TV_Shows):
         out = ''.join(map(ord3, title))
         out = str(abs(hash(int(out))))
         return out
+
 
     def _extract_info_for_mediafile(self, mediafile):
         out = {}
@@ -194,443 +457,200 @@ class xbmcnfotv(Agent.TV_Shows):
         return out
 
 
-##### search function #####
     def search(self, results, media, lang):
         self._log_function_entry('search')
 
         record = {
             'id':        media.id,
             'lang':      lang,
-            'score':     100,  # We default to perfect match
+            'score':     100,  # 100 is perfect match
             'sorttitle': None,
             'title':     media.title,
-            'year':      0, # We need a better default
+            'year':      0, # TODO: Need a better default
         }
 
         try:
             mediafile = self._find_mediafile_for_id(record['id'])
         except:
-            Log("Exception trying to find mediafile for id: '%s'" % record['id'])
+            Log("Error trying to find mediafile for id: '%s'" % record['id'])
             self.DLog("Traceback: %s" % traceback.format_exc())
             return
 
         record.update(self._extract_info_for_mediafile(mediafile))
 
         # Attempt to guess/fixup mising values
-        if not record['title'] and mediafile:
-            title_guess = self._guess_title_by_mediafile(mediafile)
-            if title_guess:
-                record['title'] = title_guess
         if not record['title']:
             record['title'] = "Unknown"
+            if mediafile:
+                title_guess = self._guess_title_by_mediafile(mediafile)
+                if title_guess:
+                    record['title'] = title_guess
         if not record['id']:
             record['id'] = self._generate_id_from_title(record['title'])
 
         Log("Scraped results: %s" % record)
-        results.Append(MetadataSearchResult(**record))
+        if True:
+            #Transfer daat to the metadata object
+            result = MetadataSearchResult(
+                id=record['id'],
+                lang=record['lang'],
+                score=record['score'],
+                sorttitle=record['sorttitle'],
+                title=record['title'],
+                year=record['year'],
+            )
+            results.Append(result)
+
+    def update_metadata_with_localmediaagent(self, metadata):
+        posterNames = []
+        posterNames.append (os.path.join(path, "poster.jpg"))
+        posterNames.append (os.path.join(path, "folder.jpg"))
+        posterNames.append (os.path.join(path, "show.jpg"))
+        posterNames.append (os.path.join(path, "season-all-poster.jpg"))
+
+        # check possible poster file locations
+        posterFilename = self.checkFilePaths (posterNames, 'poster')
+
+        if posterFilename:
+            posterData = Core.storage.load(posterFilename)
+            metadata.posters['poster.jpg'] = Proxy.Media(posterData)
+            Log('Found poster image at ' + posterFilename)
+
+        bannerNames = []
+        bannerNames.append (os.path.join(path, "banner.jpg"))
+        bannerNames.append (os.path.join(path, "folder-banner.jpg"))
+
+        # check possible banner file locations
+        bannerFilename = self.checkFilePaths (bannerNames, 'banner')
+
+        if bannerFilename:
+            bannerData = Core.storage.load(bannerFilename)
+            metadata.banners['banner.jpg'] = Proxy.Media(bannerData)
+            Log('Found banner image at ' + bannerFilename)
+
+        fanartNames = []
+
+        fanartNames.append (os.path.join(path, "fanart.jpg"))
+        fanartNames.append (os.path.join(path, "art.jpg"))
+        fanartNames.append (os.path.join(path, "backdrop.jpg"))
+        fanartNames.append (os.path.join(path, "background.jpg"))
+
+        # check possible fanart file locations
+        fanartFilename = self.checkFilePaths (fanartNames, 'fanart')
+
+        if fanartFilename:
+            fanartData = Core.storage.load(fanartFilename)
+            metadata.art['fanart.jpg'] = Proxy.Media(fanartData)
+            Log('Found fanart image at ' + fanartFilename)
+
+        themeNames = []
+
+        themeNames.append (os.path.join(path, "theme.mp3"))
+
+        # check possible theme file locations
+        themeFilename = self.checkFilePaths (themeNames, 'theme')
+
+        if themeFilename:
+            themeData = Core.storage.load(themeFilename)
+            metadata.themes['theme.mp3'] = Proxy.Media(themeData)
+            Log('Found theme music ' + themeFilename)
 
 ##### update Function #####
     def update(self, metadata, media, lang):
-        return # TODO reenable this
         self._log_function_entry('update')
 
         Dict.Reset()
         metadata.duration = None
-        id = media.id
-        duration_key = 'duration_'+id
+
+        record = {
+            'id':        media.id,
+            'lang':      lang,
+            'sorttitle': None,
+            'title':     media.title,
+            'year':      0, # TODO: Need a better default
+        }
+
+        duration_key = 'duration_'+record['id']
         Dict[duration_key] = [0] * 200
-        Log('Update called for TV Show with id = ' + id)
-        self._find_mediafile_for_id(id)
+        Log('Update called for TV Show with id = ' + record['id'])
+
+        try:
+            mediafile = self._find_mediafile_for_id(record['id'])
+        except:
+            Log("Error trying to find mediafile for id: '%s'" % record['id'])
+            self.DLog("Traceback: %s" % traceback.format_exc())
+            return
 
         if not Prefs['localmediaagent']:
-            posterNames = []
-            posterNames.append (os.path.join(path, "poster.jpg"))
-            posterNames.append (os.path.join(path, "folder.jpg"))
-            posterNames.append (os.path.join(path, "show.jpg"))
-            posterNames.append (os.path.join(path, "season-all-poster.jpg"))
+            update_metadata_with_localmediaagent(metadata)
 
-            # check possible poster file locations
-            posterFilename = self.checkFilePaths (posterNames, 'poster')
+        record.update(self._extract_info_for_mediafile(mediafile))
 
-            if posterFilename:
-                posterData = Core.storage.load(posterFilename)
-                metadata.posters['poster.jpg'] = Proxy.Media(posterData)
-                Log('Found poster image at ' + posterFilename)
+        if not record['title']:
+            record['title'] = "Unknown"
+            if mediafile:
+                title_guess = self._guess_title_by_mediafile(mediafile)
+                if title_guess:
+                    record['title'] = title_guess
 
-            bannerNames = []
-            bannerNames.append (os.path.join(path, "banner.jpg"))
-            bannerNames.append (os.path.join(path, "folder-banner.jpg"))
+        #Log("---------------------")
+        #Log("Series nfo Information")
+        #Log("---------------------")
+        #try: Log("ID: " + str(metadata.guid))
+        #except: Log("ID: -")
+        #try: Log("Title: " + str(metadata.title))
+        #except: Log("Title: -")
+        #try: Log("Sort Title: " + str(metadata.title_sort))
+        #except: Log("Sort Title: -")
+        #try: Log("Original: " + str(metadata.original_title))
+        #except: Log("Original: -")
+        #try: Log("Rating: " + str(metadata.rating))
+        #except: Log("Rating: -")
+        #try: Log("Content: " + str(metadata.content_rating))
+        #except: Log("Content: -")
+        #try: Log("Network: " + str(metadata.studio))
+        #except: Log("Network: -")
+        #try: Log("Premiere: " + str(metadata.originally_available_at))
+        #except: Log("Premiere: -")
+        ##try: Log("Tagline: " + str(metadata.tagline))
+        #except: Log("Tagline: -")
+        #try: Log("Summary: " + str(metadata.summary))
+        #except: Log("Summary: -")
+        #Log("Genres:")
+        #try: [Log("\t" + genre) for genre in metadata.genres]
+        #except: Log("\t-")
+        #Log("Collections:")
+        #try: [Log("\t" + collection) for collection in metadata.collections]
+        #except: Log("\t-")
+        #try: Log("Duration: " + str(metadata.duration // 60000) + ' min')
+        #except: Log("Duration: -")
+        #Log("Actors:")
+        #try: [Log("\t" + actor.name + " > " + actor.role) for actor in metadata.roles]
+        #except: [Log("\t" + actor.name) for actor in metadata.roles]
+        #Log("---------------------")
 
-            # check possible banner file locations
-            bannerFilename = self.checkFilePaths (bannerNames, 'banner')
+        if True:
+            #Transfer daat to the metadata object
+            for k in ['title','title_sort','original_title','rating','content_rating','studio','originally_available_at','tagline','summary','duration']:
+                setattr(metadata, k, record[k])
+            metadata.roles.clear()
+            for actor in record.get('actors', []):
+                newrole = metadata.roles.new()
+                newrole.name = actor.get('name')
+                newrole.role = actor.get('role')
+                newrole.photo = actor.get('photo')
+            metadata.summary = self._build_summary(record)
+            metadata.genres.clear()
+            if record.get('genres'):
+                for genre in record['genres']:
+                    metadata.genres.add(genre)
+            metadata.genres.discard('')
+            metadata.collections.clear()
+            if record.get('collections'):
+                for collection in record['collections']:
+                    metadata.collections.add(collection)
+            metadata.collections.discard('')
 
-            if bannerFilename:
-                bannerData = Core.storage.load(bannerFilename)
-                metadata.banners['banner.jpg'] = Proxy.Media(bannerData)
-                Log('Found banner image at ' + bannerFilename)
-
-            fanartNames = []
-
-            fanartNames.append (os.path.join(path, "fanart.jpg"))
-            fanartNames.append (os.path.join(path, "art.jpg"))
-            fanartNames.append (os.path.join(path, "backdrop.jpg"))
-            fanartNames.append (os.path.join(path, "background.jpg"))
-
-            # check possible fanart file locations
-            fanartFilename = self.checkFilePaths (fanartNames, 'fanart')
-
-            if fanartFilename:
-                fanartData = Core.storage.load(fanartFilename)
-                metadata.art['fanart.jpg'] = Proxy.Media(fanartData)
-                Log('Found fanart image at ' + fanartFilename)
-
-            themeNames = []
-
-            themeNames.append (os.path.join(path, "theme.mp3"))
-
-            # check possible theme file locations
-            themeFilename = self.checkFilePaths (themeNames, 'theme')
-
-            if themeFilename:
-                themeData = Core.storage.load(themeFilename)
-                metadata.themes['theme.mp3'] = Proxy.Media(themeData)
-                Log('Found theme music ' + themeFilename)
-
-        if media.title:
-            title = media.title
-        else:
-            title = "Unknown"
-
-        if not os.path.exists(nfoName):
-            self.DLog("Couldn't find a tvshow.nfo file; will try to guess from filename...:")
-            regtv = re.compile('(.+?)'
-                '[ .]S(\d\d?)E(\d\d?)'
-                '.*?'
-                '(?:[ .](\d{3}\d?p)|\Z)?')
-            tv = regtv.match(filename)
-            if tv:
-                title = tv.group(1).replace(".", " ")
-                metadata.title = title
-            self.DLog("Using tvshow.title = " + title)
-        else:
-            nfoFile = nfoName
-            Log("Found nfo file at " + nfoFile)
-            nfoText = Core.storage.load(nfoFile)
-            # work around failing XML parses for things with &'s in them. This may need to go farther than just &'s....
-            nfoText = re.sub(r'&(?![A-Za-z]+[0-9]*;|#[0-9]+;|#x[0-9a-fA-F]+;)', r'&amp;', nfoText)
-            # remove empty xml tags from nfo
-            self.DLog('Removing empty XML tags from tvshows nfo...')
-            nfoText = re.sub(r'^\s*<.*/>[\r\n]+', '', nfoText, flags = re.MULTILINE)
-
-            nfoTextLower = nfoText.lower()
-            if nfoTextLower.count('<tvshow') > 0 and nfoTextLower.count('</tvshow>') > 0:
-                # Remove URLs (or other stuff) at the end of the XML file
-                nfoText = '%s</tvshow>' % nfoText.split('</tvshow>')[0]
-
-                #likely an xbmc nfo file
-                try: nfoXML = XML.ElementFromString(nfoText).xpath('//tvshow')[0]
-                except:
-                    self.DLog('ERROR: Cant parse XML in ' + nfoFile + '. Aborting!')
-                    return
-
-                #remove remaining empty xml tags
-                self.DLog('Removing remaining empty XML tags from tvshows nfo...')
-                nfoXML = self.RemoveEmptyTags(nfoXML)
-
-                # Title
-                try: metadata.title = nfoXML.xpath("title")[0].text
-                except:
-                    self.DLog("ERROR: No <title> tag in " + nfoFile + ". Aborting!")
-                    return
-                # Sort Title
-                try: metadata.title_sort = nfoXML.xpath("sorttitle")[0].text
-                except:
-                    self.DLog("No <sorttitle> tag in " + nfoFile + ".")
-                    pass
-                # Original Title
-                try: metadata.original_title = nfoXML.xpath('originaltitle')[0].text
-                except: pass
-                # Content Rating
-                try:
-                    mpaa = nfoXML.xpath('./mpaa')[0].text
-                    match = re.match(r'(?:Rated\s)?(?P<mpaa>[A-z0-9-+/.]+(?:\s[0-9]+[A-z]?)?)?', mpaa)
-                    if match.group('mpaa'):
-                        content_rating = match.group('mpaa')
-                    else:
-                        content_rating = 'NR'
-                    metadata.content_rating = content_rating
-                except: pass
-                # Network
-                try: metadata.studio = nfoXML.xpath("studio")[0].text
-                except: pass
-                # Premiere
-                try:
-                    air_string = None
-                    try:
-                        self.DLog("Reading aired tag...")
-                        air_string = nfoXML.xpath("aired")[0].text
-                        self.DLog("Aired tag is: " + air_string)
-                    except:
-                        self.DLog("No aired tag found...")
-                        pass
-                    if not air_string:
-                        try:
-                            self.DLog("Reading premiered tag...")
-                            air_string = nfoXML.xpath("premiered")[0].text
-                            self.DLog("Premiered tag is: " + air_string)
-                        except:
-                            self.DLog("No premiered tag found...")
-                            pass
-                    if not air_string:
-                        try:
-                            self.DLog("Reading dateadded tag...")
-                            air_string = nfoXML.xpath("dateadded")[0].text
-                            self.DLog("Dateadded tag is: " + air_string)
-                        except:
-                            self.DLog("No dateadded tag found...")
-                            pass
-                    if air_string:
-                        try:
-                            if Prefs['dayfirst']:
-                                dt = parse(air_string, dayfirst=True)
-                            else:
-                                dt = parse(air_string)
-                            metadata.originally_available_at = dt
-                            self.DLog("Set premiere to: " + dt.strftime('%Y-%m-%d'))
-                        except:
-                            self.DLog("Couldn't parse premiere: " + traceback.format_exc())
-                            pass
-                except:
-                    self.DLog("Exception parsing Premiere: " + traceback.format_exc())
-                    pass
-                metadata.summary = ''
-                # Status
-                try:
-                    status = nfoXML.xpath('status')[0].text.strip()
-                    if Prefs['statusinsummary']:
-                        self.DLog('User setting adds show status (' + status + ') in front of summary...')
-                        metadata.summary = 'Status: ' + status + ' | '
-                except:
-                    pass
-                # Tagline - not supported by TVShow Object!!!
-                try: metadata.tagline = nfoXML.findall("tagline")[0].text
-                except: pass
-                # Summary (Plot)
-                try: metadata.summary = metadata.summary + nfoXML.xpath("plot")[0].text
-                except:
-                    pass
-                # Ratings
-                try:
-                    nforating = round(float(nfoXML.xpath("rating")[0].text.replace(',', '.')),1)
-                    metadata.rating = nforating
-                    self.DLog("Series Rating found: " + str(nforating))
-                except:
-                    self.DLog("Can't read rating from tvshow.nfo.")
-                    nforating = 0.0
-                    pass
-                if Prefs['altratings']:
-                    self.DLog("Searching for additional Ratings...")
-                    allowedratings = Prefs['ratings']
-                    if not allowedratings: allowedratings = ""
-                    addratingsstring = ""
-                    try:
-                        addratings = nfoXML.xpath('ratings')
-                        self.DLog("Trying to read additional ratings from tvshow.nfo.")
-                    except:
-                        self.DLog("Can't read additional ratings from tvshow.nfo.")
-                        pass
-                    if addratings:
-                        for addratingXML in addratings:
-                            for addrating in addratingXML:
-                                try:
-                                    ratingprovider = str(addrating.attrib['moviedb'])
-                                except:
-                                    pass
-                                    self.DLog("Skipping additional rating without moviedb attribute!")
-                                    continue
-                                ratingvalue = str(addrating.text.replace (',','.'))
-                                if ratingprovider.lower() in PERCENT_RATINGS:
-                                    ratingvalue = ratingvalue + "%"
-                                if ratingprovider in allowedratings or allowedratings == "":
-                                    self.DLog("adding rating: " + ratingprovider + ": " + ratingvalue)
-                                    addratingsstring = addratingsstring + " | " + ratingprovider + ": " + ratingvalue
-                            if addratingsstring != "":
-                                self.DLog("Putting additional ratings at the " + Prefs['ratingspos'] + " of the summary!")
-                                if Prefs['ratingspos'] == "front":
-                                    if Prefs['preserverating']:
-                                        metadata.summary = addratingsstring[3:] + self.unescape(" &#9733;\n\n") + metadata.summary
-                                    else:
-                                        metadata.summary = self.unescape("&#9733; ") + addratingsstring[3:] + self.unescape(" &#9733;\n\n") + metadata.summary
-                                else:
-                                    metadata.summary = metadata.summary + self.unescape("\n\n&#9733; ") + addratingsstring[3:] + self.unescape(" &#9733;")
-                            else:
-                                self.DLog("Additional ratings empty or malformed!")
-                    if Prefs['preserverating']:
-                        self.DLog("Putting .nfo rating in front of summary!")
-                        metadata.summary = self.unescape(str(Prefs['beforerating'])) + "{:.1f}".format(nforating) + self.unescape(str(Prefs['afterrating'])) + metadata.summary
-                        metadata.rating = nforating
-                    else:
-                        metadata.rating = nforating
-                # Genres
-                try:
-                    genres = nfoXML.xpath('genre')
-                    metadata.genres.clear()
-                    [metadata.genres.add(g.strip()) for genreXML in genres for g in genreXML.text.split("/")]
-                    metadata.genres.discard('')
-                except: pass
-                # Collections (Set)
-                setname = None
-                try:
-                    metadata.collections.clear()
-                    # trying enhanced set tag name first
-                    setname = nfoXML.xpath('set')[0].xpath('name')[0].text
-                    self.DLog('Enhanced set tag found: ' + setname)
-                except:
-                    self.DLog('No enhanced set tag found...')
-                    pass
-                try:
-                    # fallback to flat style set tag
-                    if not setname:
-                        setname = nfoXML.xpath('set')[0].text
-                        self.DLog('Set tag found: ' + setname)
-                except:
-                    self.DLog('No set tag found...')
-                    pass
-                if setname:
-                    metadata.collections.add (setname)
-                    self.DLog('Added Collection from Set tag.')
-                # Collections (Tags)
-                try:
-                    tags = nfoXML.xpath('tag')
-                    [metadata.collections.add(t.strip()) for tag_xml in tags for t in tag_xml.text.split('/')]
-                    self.DLog('Added Collection(s) from tags.')
-                except:
-                    self.DLog('Error adding Collection(s) from tags.')
-                    pass
-                # Duration
-                try:
-                    sruntime = nfoXML.xpath("durationinseconds")[0].text
-                    metadata.duration = int(re.compile('^([0-9]+)').findall(sruntime)[0]) * 1000
-                except:
-                    try:
-                        sruntime = nfoXML.xpath("runtime")[0].text
-                        duration = int(re.compile('^([0-9]+)').findall(sruntime)[0])
-                        duration_ms = xbmcnfotv.time_convert (self, duration)
-                        metadata.duration = duration_ms
-                        self.DLog("Set Series Episode Duration from " + str(duration) + " in tvshow.nfo file to " + str(duration_ms) + " in Plex.")
-                    except:
-                        self.DLog("No Series Episode Duration in tvschow.nfo file.")
-                        pass
-                # Actors
-                rroles = []
-                metadata.roles.clear()
-                for n, actor in enumerate(nfoXML.xpath('actor')):
-                    newrole = metadata.roles.new()
-                    try:
-                        newrole.name = actor.xpath('name')[0].text
-                    except:
-                        newrole.name = 'Unknown Name ' + str(n)
-                        pass
-                    try:
-                        role = actor.xpath('role')[0].text
-                        if role in rroles:
-                            newrole.role = role + ' ' + str(n)
-                        else:
-                            newrole.role = role
-                        rroles.append (newrole.role)
-                    except:
-                        newrole.role = 'Unknown Role ' + str(n)
-                        pass
-                    newrole.photo = ''
-                    athumbloc = Prefs['athumblocation']
-                    if athumbloc in ['local','global']:
-                        aname = None
-                        try:
-                            try:
-                                aname = actor.xpath('name')[0].text
-                            except:
-                                pass
-                            if aname:
-                                aimagefilename = aname.replace(' ', '_') + '.jpg'
-                                athumbpath = Prefs['athumbpath'].rstrip ('/')
-                                if not athumbpath == '':
-                                    if athumbloc == 'local':
-                                        localpath = os.path.join (path,'.actors',aimagefilename)
-                                        scheme, netloc, spath, qs, anchor = urlparse.urlsplit(athumbpath)
-                                        basepath = os.path.basename (spath)
-                                        self.DLog ('Searching for additional path parts after: ' + basepath)
-                                        searchpos = spath.find (basepath)
-                                        addpos = searchpos + len(basepath)
-                                        addpath = os.path.dirname(spath)[addpos:]
-                                        if searchpos != -1 and addpath !='':
-                                            self.DLog ('Found additional path parts: ' + addpath)
-                                        else:
-                                            addpath = ''
-                                            self.DLog ('Found no additional path parts.')
-                                        aimagepath = athumbpath + addpath + '/' + os.path.basename(path) + '/.actors/' + aimagefilename
-                                        if not os.path.isfile(localpath):
-                                            self.DLog ('failed setting ' + athumbloc + ' actor photo: ' + aimagepath)
-                                            aimagepath = None
-                                    if athumbloc == 'global':
-                                        aimagepath = athumbpath + '/' + aimagefilename
-                                        scheme, netloc, spath, qs, anchor = urlparse.urlsplit(aimagepath)
-                                        spath = urllib.quote(spath, '/%')
-                                        qs = urllib.quote_plus(qs, ':&=')
-                                        aimagepathurl = urlparse.urlunsplit((scheme, netloc, spath, qs, anchor))
-                                        response = urllib.urlopen(aimagepathurl).code
-                                        if not response == 200:
-                                            self.DLog ('failed setting ' + athumbloc + ' actor photo: ' + aimagepath)
-                                            aimagepath = None
-                                    if aimagepath:
-                                        newrole.photo = aimagepath
-                                        self.DLog ('success setting ' + athumbloc + ' actor photo: ' + aimagepath)
-                        except:
-                            self.DLog ('exception setting local or global actor photo!')
-                            self.DLog ("Traceback: " + traceback.format_exc())
-                            pass
-                    if athumbloc == 'link' or not newrole.photo:
-                        try:
-                            newrole.photo = actor.xpath('thumb')[0].text
-                            self.DLog ('linked actor photo: ' + newrole.photo)
-                        except:
-                            self.DLog ('failed setting linked actor photo!')
-                            pass
-
-                Log("---------------------")
-                Log("Series nfo Information")
-                Log("---------------------")
-                try: Log("ID: " + str(metadata.guid))
-                except: Log("ID: -")
-                try: Log("Title: " + str(metadata.title))
-                except: Log("Title: -")
-                try: Log("Sort Title: " + str(metadata.title_sort))
-                except: Log("Sort Title: -")
-                try: Log("Original: " + str(metadata.original_title))
-                except: Log("Original: -")
-                try: Log("Rating: " + str(metadata.rating))
-                except: Log("Rating: -")
-                try: Log("Content: " + str(metadata.content_rating))
-                except: Log("Content: -")
-                try: Log("Network: " + str(metadata.studio))
-                except: Log("Network: -")
-                try: Log("Premiere: " + str(metadata.originally_available_at))
-                except: Log("Premiere: -")
-                try: Log("Tagline: " + str(metadata.tagline))
-                except: Log("Tagline: -")
-                try: Log("Summary: " + str(metadata.summary))
-                except: Log("Summary: -")
-                Log("Genres:")
-                try: [Log("\t" + genre) for genre in metadata.genres]
-                except: Log("\t-")
-                Log("Collections:")
-                try: [Log("\t" + collection) for collection in metadata.collections]
-                except: Log("\t-")
-                try: Log("Duration: " + str(metadata.duration // 60000) + ' min')
-                except: Log("Duration: -")
-                Log("Actors:")
-                try: [Log("\t" + actor.name + " > " + actor.role) for actor in metadata.roles]
-                except: [Log("\t" + actor.name) for actor in metadata.roles]
-                Log("---------------------")
 
         # Grabs the season data
         @parallelize
@@ -926,7 +946,7 @@ class xbmcnfotv(Agent.TV_Shows):
                                                         if epratingprovider in allowedratings or allowedratings == "":
                                                             self.DLog("adding episode rating: " + epratingprovider + ": " + epratingvalue)
                                                             addepratingsstring = addepratingsstring + " | " + epratingprovider + ": " + epratingvalue
-                                                if addratingsstring != "":
+                                                if addratingsstring != "": # originally in series??
                                                     self.DLog("Putting additional episode ratings at the " + Prefs['ratingspos'] + " of the summary!")
                                                     if Prefs['ratingspos'] == "front":
                                                         if Prefs['preserveratingep']:
@@ -1000,7 +1020,7 @@ class xbmcnfotv(Agent.TV_Shows):
                                                 self.DLog ("Fallback to <runtime> tag from episodes .nfo file...")
                                                 eruntime = nfoXML.xpath("runtime")[0].text
                                                 eduration = int(re.compile('^([0-9]+)').findall(eruntime)[0])
-                                                eduration_ms = xbmcnfotv.time_convert (self, eduration)
+                                                eduration_ms = self.time_convert (self, eduration)
                                                 episode.duration = eduration_ms
                                             except:
                                                 episode.duration = metadata.duration if metadata.duration else None

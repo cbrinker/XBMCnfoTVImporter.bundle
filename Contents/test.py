@@ -15,7 +15,7 @@ def arg_should_contain(x):
 
 #print(mock.call_args_list)
 
-class MyTest(unittest.TestCase):
+class TestUtilities(unittest.TestCase):
     def setUp(self):
 
         for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'XML', 'String', 'Core', 'MetadataSearchResult', 'Dict']:
@@ -61,7 +61,8 @@ class MyTest(unittest.TestCase):
                 (7201, 7201),
         ]:
                 self.assertEqual(self.target.time_convert(_in), _out)
-        
+
+
     def test_check_file_paths_no_input(self):
         out = self.target.checkFilePaths([], 'a_type')
         self.assertEqual(out, None)
@@ -85,7 +86,7 @@ class MyTest(unittest.TestCase):
 
     @patch('os.path')
     def test_check_file_paths_skip_non_files(self, mock_path):
-        mock_path.isdir.return_value = True
+        mock_path.isdir.return_value = False
         mock_path.exists.return_value = False
         out = self.target.checkFilePaths(['1stfound','y'], 'a_type')
         self.assertEqual(out, None)
@@ -100,6 +101,7 @@ class MyTest(unittest.TestCase):
         for _in, _out in [
                 ("", ""),
                 ("&#1234;", u'\u04d2'),
+                ("&#x1234;", u'\u1234'),
                 ("&x1234;", '&x1234;'),
                 ("&name;", '&name;'),
                 ("&quot;", '"'),
@@ -108,12 +110,21 @@ class MyTest(unittest.TestCase):
                 ("&gt;", ">"),
                 ("&#9733;", u'\u2605'), #black star
                 ("&quot;&#&amp;&quot;", u'"&#&"'), # Try multiple
+                ("&#4x0;", '&#4x0;'), # Bad char ref
         ]:
                 self.assertEqual(self.target.unescape(_in), _out)
 
     def test_log_function_entry(self):
+        self.Prefs.__getitem__.return_value = True
         self.assertEqual(self.target._log_function_entry('AFuncName'), None)
         self.Log.assert_any_call(AnyStringWith('Entering AFuncName'))
+        self.Log.assert_any_call(AnyStringWith('is enabled'))
+
+        self.Prefs.__getitem__.return_value = False
+        self.assertEqual(self.target._log_function_entry('AFuncName'), None)
+        self.Log.assert_any_call(AnyStringWith('Entering AFuncName'))
+        self.Log.assert_any_call(AnyStringWith('is disabled'))
+
 
     def test_generate_id_from_title(self):
         for _in, _out in [
@@ -185,7 +196,7 @@ class MyTest(unittest.TestCase):
         inputs = { 'id':'a', 'sorttitle':'b', 'title':'c', 'year':'nondigit', 'extra':'a'}
         outputs = { 'id':'a', 'sorttitle':'b', 'title':'c', }
         self.assertEqual(self.target._parse_tvshow_nfo_text("_"), outputs)
-        self.Log.assert_called_once_with(AnyStringWith('<year>'))
+        #self.Log.assert_called_once_with(AnyStringWith('<year>'))
 
         # all bad
         inputs = {}
@@ -199,28 +210,80 @@ class MyTest(unittest.TestCase):
         self.Log.assert_called_once_with(AnyStringWith('failed parsing'))
 
 
+    def test_extract_info_for_mediafile(self):
+        self.target._find_nfo_for_file = Mock(return_value = "afile.nfo")
+        self.Core.storage.return_value.load.return_value = 'some text'
+        self.target._sanitize_nfo = Mock(return_value = 'sanitized text')
+        self.target._parse_tvshow_nfo_text = Mock(return_value = {'made':'it'})
+
+        self.assertEqual(self.target._extract_info_for_mediafile("afile.ext"), {'made':'it'})
+        self.Core.storage.load.assert_called_once_with('afile.nfo')
+        self.target._sanitize_nfo.assert_called() # Make sure we are sanitizing
+        self.target._parse_tvshow_nfo_text.assert_called()
+
+        #Sad path
+        self.target._find_nfo_for_file = Mock(return_value = None)
+        self.assertEqual(self.target._extract_info_for_mediafile("afile.ext"), {})
+
+    #@patch('os.path')
+    #def test_update(self, mock_path):
+    #    results = MagicMock()
+    #    media = MagicMock()
+    #    lang = None
+    #    out = self.target.update(results, media, lang)
+    #    self.assertEqual(out, None)
+
+
+class TestSearch(unittest.TestCase):
+    def setUp(self):
+
+        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult']:
+                patcher = patch("__builtin__."+name, create=True)
+                setattr(self, name, patcher.start())
+                self.addCleanup(patcher.stop)
+        self.Agent.TV_Shows = object
+
+        patch('Code.parallelize', create=True).start()
+        import Code
+        self.target = Code.xbmcnfotv()
+
+
     @patch('os.path')
     def test_search(self, mock_path):
         results = MagicMock()
-        media = MagicMock()
-        lang = None
+        media = MagicMock(id='an_id', title='a_title')
+        lang = 'alang'
+        extracted = {'id':'a_id', 'year':1970, 'title':'a_title', 'sorttitle':'a_sorttitle'}
+        self.target._extract_info_for_mediafile = Mock(return_value=extracted)
+        self.target._find_mediafile_for_id = Mock(side_effect="a_mediafile")
 
-        self.Core.storage.load.return_value = "A String"
+        self.assertEqual(self.target.search(results, media, lang), None)
 
-        out = self.target.search(results, media, lang)
-        self.assertEqual(out, None)
+        self.MetadataSearchResult.assert_called_once_with(score=100, lang=lang, **extracted)
+        results.Append.assert_called_once()
+        self.Log.assert_called_with(AnyStringWith('craped results'))
 
     @patch('os.path')
-    def test_update(self, mock_path):
-        results = MagicMock()
-        media = MagicMock()
-        lang = None
+    def test_search_error_with_mediafile(self, mock_path):
+        self.target._find_mediafile_for_id = Mock(side_effect=Exception())
 
-        self.Core.storage.load.return_value = "A String"
+        self.assertEqual(self.target.search(Mock(), Mock(), Mock()), None)
 
-        out = self.target.update(results, media, lang)
-        self.assertEqual(out, None)
+        self.Log.assert_called_with(AnyStringWith('Traceback'))
 
+    @patch('os.path')
+    def test_search_with_guessing(self, mock_path):
+        results = Mock()
+        self.target._find_mediafile_for_id = Mock(side_effect="a_mediafile")
+        self.target._extract_info_for_mediafile = Mock(return_value={})
+        self.target._guess_title_by_mediafile = Mock(return_value='a_guess')
+        self.target._generate_id_from_title = Mock(return_value='12345')
+
+        self.assertEqual(self.target.search(results, Mock(title=None, id=None), 'alang'), None)
+
+        self.Log.assert_called_with(AnyStringWith('craped results'))
+        results.Append.assert_called_once()
+        self.MetadataSearchResult.assert_called_once_with(id='12345', score=100, lang='alang', sorttitle=None, title='a_guess', year=0)
 
 
 if __name__ == '__main__':

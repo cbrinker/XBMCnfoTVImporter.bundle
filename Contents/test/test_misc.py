@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import unittest
+import datetime
 from mock import Mock, MagicMock, patch
 
 from lxml import etree as ET
@@ -40,6 +41,80 @@ class TestUtilities(unittest.TestCase):
         self.target.DLog("Anything")
         self.Log.assert_not_called()
 
+    def test_parse_dt(self):
+        expected_dt = datetime.datetime(2018, 8, 11, 0, 0)
+        for _pref, _in, _out in [
+            (False, "08.11.2018", expected_dt),
+            (False, "08/11/2018", expected_dt),
+            (False, "Garbage", None),
+            (True, "11.08.2018", expected_dt),
+            (True, "11/08/2018", expected_dt),
+            (True, "Garbage", None),
+        ]:
+            self.Prefs.__getitem__.return_value = _pref
+            self.assertEqual(self.target._parse_dt(_in), _out)
+
+    def test_get_premier(self):
+        self.target._parse_dt = Mock(side_effect=lambda x:x)
+        for _in, _out in [
+            ("<x><aired>XXX</aired></x>", {'originally_available_at':'XXX'}),
+            ("<x><premiered>XXX</premiered></x>", {'originally_available_at':'XXX'}),
+            ("<x><dateadded>XXX</dateadded></x>", {'originally_available_at':'XXX'}),
+            ("<x><aired>XXX</aired><premiered>YYY</premiered><dateadded>ZZZ</dateadded></x>", {'originally_available_at':'XXX'}),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_premier(xml), _out)
+
+    def test_get_directors(self):
+        for _in, _out in [
+            ("<x></x>", {}),
+            ("<x><director>d1</director></x>", {'directors': ['d1']}),
+            ("<x><director>d3/d2 /d1</director></x>", {'directors':['d1','d2','d3']}),
+            ("<x><director>d3/d3</director></x>", {'directors':['d3']}),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_directors(xml), _out)
+
+    def test_get_duration(self):
+        for _in, _out in [
+            ("<x></x>", {}),
+            ("<x><fileinfo><streamdetails><video><durationinseconds>123</durationinseconds></video></streamdetails></fileinfo></x>", {'duration': 123000}),
+            ("<x><runtime>Garbage</runtime></x>", {}),
+            ("<x><runtime>01X</runtime></x>", {'duration': 3600000}),
+            ("<x><runtime>6</runtime></x>", {'duration': 360000}),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_duration(xml), _out)
+
+    def test_get_credites(self):
+        for _in, _out in [
+            ("<x></x>", {}),
+            ("<x><credits>c1</credits></x>", {'writers': ['c1']}),
+            ("<x><credits>c1/c2</credits></x>", {'writers': ['c1','c2']}),
+            ("<x><credits>c1</credits><credits>c2</credits></x>", {'writers': ['c1','c2']}),
+            ("<x><credits>(Producer)p1</credits></x>", {'producers': ['p1']}),
+            ("<x><credits>p1(Producer)</credits></x>", {'producers': ['p1']}),
+            ("<x><credits>(Writer)w1</credits></x>", {'writers': ['w1']}),
+            ("<x><credits>w1(Writer)</credits></x>", {'writers': ['w1']}),
+            ("<x><credits>(Guest Star)gs1</credits></x>", {'guest_stars': ['gs1']}),
+            ("<x><credits>gs1(Guest Star)</credits></x>", {'guest_stars': ['gs1']}),
+            ("<x><credits>gs2 (Guest Star)/(Producer)p2</credits></x>", {'producers': ['p2'],'guest_stars':['gs2']}),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_credits(xml), _out)
+
+    def test_get_ratings(self):
+        for _in, _out in [
+            ("<x></x>", {}),
+            ("<x><rating><value>8.8</value></rating><rating><value>9.9</value></rating></x>", {'rating': 8.8}),
+            ("<x><rating><value>8</value></rating></x>", {'rating': 8.0}),
+            ("<x><rating><value>1.54</value></rating></x>", {'rating': 1.5}),
+            ("<x><rating><value>1,54</value></rating></x>", {'rating': 1.5}),
+            ("<x><rating><value>0.2</value></rating></x>", {'rating': 0.2}),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_ratings(xml), _out)
+
     def test_debug_logging(self):
         msg = "A test message"
         self.Prefs.__getitem__.return_value = 1
@@ -47,20 +122,18 @@ class TestUtilities(unittest.TestCase):
         self.Prefs.__getitem__.assert_called_with('debug')
         self.Log.assert_called_with(msg)
 
-    def test_time_convert(self):
+
+    def test_set_duration_as_avg_of_episodes(self):
         for _in, _out in [
-                (0, 0),
-                (1, 3600000),
-                (2, 7200000),
-                (3, 180000),
-                (119, 7140000),
-                (120, 7200000),
-                (121, 121000),
-                (7199, 7199000),
-                (7200, 7200000),
-                (7201, 7201),
+                ([0, 100, 0], 6000000),
+                ([20,30,40,50], 2100000),
+                ([2.5,1.2], 60000),
+                ([0, 0], 0),
+                (None, 0),
+                ("", 0),
+                ([], 0),
         ]:
-                self.assertEqual(self.target.time_convert(_in), _out)
+                self.assertEqual(self.target._set_duration_as_avg_of_episodes(_in), _out)
 
 
     def test_check_file_paths_no_input(self):
@@ -140,7 +213,7 @@ class TestUtilities(unittest.TestCase):
         self.XML.ElementFromURL.return_value.xpath.return_value = [{'file':'file_value'}]
         self.String.Unquote.side_effect = lambda x: x
 
-        self.assertEqual(self.target._find_mediafile_for_id('18879'), 'file_value')
+        self.assertEqual(self.target._find_mediafiles_for_id('18879'), ['file_value'])
         self.XML.ElementFromURL.assert_called_once_with(AnyStringWith('18879'))
         self.String.Unquote.assert_called_once_with('file_value')
 
@@ -148,12 +221,20 @@ class TestUtilities(unittest.TestCase):
     def test_sanitize_nfo(self):
         for _in, _out in [
                 ("<tvshow>\n<a>Hi&lo&amp;w</a>\n<x/>\n</tvshow>Some garbage", '<tvshow>\n<a>Hi&amp;lo&amp;w</a>\n</tvshow>'),
+                ("<tvshow>\n<a>Hi&lo&amp;w</a>\n<x/>\n</tvshow>", '<tvshow>\n<a>Hi&amp;lo&amp;w</a>\n</tvshow>'),
+                ("<tvshow>X</tvshow>\n<tvshow>Y</tvshow>XXXX", '<tvshow>X</tvshow>\n<tvshow>Y</tvshow>'),
+                ("<tvshow>X</tvshow>\n<tvshow>Y</tvshow>", '<tvshow>X</tvshow>\n<tvshow>Y</tvshow>'),
+                ("<tvshow/>", '<tvshow/>'),
         ]:
                 self.assertEqual(self.target._sanitize_nfo(_in, 'tvshow'), _out)
 
-    @patch('os.path')
-    def test_find_nfo_for_file(self, mock_path):
+        for _in, _out in [
+                ("before<x>during</x><x/>after", 'beforeduringafter'),
+        ]:
+                self.assertEqual(self.target._sanitize_nfo(_in, 'y', ['x']), _out)
 
+    @patch('os.path')
+    def test_find_nfo_for_file_tvshow(self, mock_path):
         # Simulate os.path calls based on just string manipulation
         mock_path.dirname = Mock(side_effect = lambda x: "/".join(x.split("/")[:-1]))
         mock_path.exists  = Mock(side_effect = lambda x: x in files_exist_at)
@@ -166,6 +247,20 @@ class TestUtilities(unittest.TestCase):
                 ([], 'a/b/c/d', None), # No files found
         ]:
                 self.assertEqual(self.target._find_nfo_for_file(_in), _out)
+
+    @patch('os.path')
+    def test_find_nfo_for_file_episode(self, mock_path):
+        # Simulate os.path calls based on just string manipulation
+        mock_path.dirname = Mock(side_effect = lambda x: "/".join(x.split("/")[:-1]))
+        mock_path.exists  = Mock(side_effect = lambda x: x in files_exist_at)
+        mock_path.join    = Mock(side_effect = lambda x,y: x+"/"+y)
+        mock_path.basename = Mock(side_effect = lambda x: x.rsplit("/",1)[-1])
+
+        for files_exist_at, _in, _out in [
+                (['a/b/something.nfo'], 'a/b/something.xyz', 'a/b/something.nfo'), # perfect match
+                ([], 'a/b/c/d', None), # No files found
+        ]:
+                self.assertEqual(self.target._find_nfo_for_file(_in, algo='episode'), _out)
 
     @patch('os.path')
     def test_guess_title_by_mediafile(self, mock_path):
@@ -216,7 +311,7 @@ class TestUtilities(unittest.TestCase):
         self.target._sanitize_nfo = Mock(return_value = 'sanitized text')
         self.target._parse_tvshow_nfo_text = Mock(return_value = {'made':'it'})
 
-        self.assertEqual(self.target._extract_info_for_mediafile("afile.ext"), {'made':'it'})
+        self.assertEqual(self.target._extract_info_for_mediafile("afile.ext"), {'made':'it','nfo_file':'afile.nfo'})
         self.Core.storage.load.assert_called_once_with('afile.nfo')
         self.target._sanitize_nfo.assert_called() # Make sure we are sanitizing
         self.target._parse_tvshow_nfo_text.assert_called()
@@ -255,7 +350,7 @@ class TestSearch(unittest.TestCase):
         lang = 'alang'
         extracted = {'id':'a_id', 'year':1970, 'title':'a_title', 'sorttitle':'a_sorttitle'}
         self.target._extract_info_for_mediafile = Mock(return_value=extracted)
-        self.target._find_mediafile_for_id = Mock(side_effect="a_mediafile")
+        self.target._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
 
         self.assertEqual(self.target.search(results, media, lang), None)
 
@@ -265,7 +360,7 @@ class TestSearch(unittest.TestCase):
 
     @patch('os.path')
     def test_search_error_with_mediafile(self, mock_path):
-        self.target._find_mediafile_for_id = Mock(side_effect=Exception())
+        self.target._find_mediafiles_for_id = Mock(side_effect=Exception())
 
         self.assertEqual(self.target.search(Mock(), Mock(), Mock()), None)
 
@@ -274,7 +369,7 @@ class TestSearch(unittest.TestCase):
     @patch('os.path')
     def test_search_with_guessing(self, mock_path):
         results = Mock()
-        self.target._find_mediafile_for_id = Mock(side_effect="a_mediafile")
+        self.target._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
         self.target._extract_info_for_mediafile = Mock(return_value={})
         self.target._guess_title_by_mediafile = Mock(return_value='a_guess')
         self.target._generate_id_from_title = Mock(return_value='12345')
@@ -285,6 +380,89 @@ class TestSearch(unittest.TestCase):
         results.Append.assert_called_once()
         self.MetadataSearchResult.assert_called_once_with(id='12345', score=100, lang='alang', sorttitle=None, title='a_guess', year=0)
 
+class TestMultipleEpisode(unittest.TestCase):
+    def setUp(self):
+
+        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult', 'XML']:
+                patcher = patch("__builtin__."+name, create=True)
+                setattr(self, name, patcher.start())
+                self.addCleanup(patcher.stop)
+        self.Agent.TV_Shows = object
+
+        patch('Code.parallelize', create=True).start()
+        import Code
+        self.target = Code.xbmcnfotv()
+
+    @patch('os.path')
+    def test_multiple_episodes(self, mock_path):
+        self.Prefs.__getitem__.side_effect=lambda x: _prefs[x]
+        self.target.RemoveEmptyTags = Mock(side_effect=lambda x:x)
+        self.XML.ElementFromString.side_effect=lambda x: ET.fromstring(x)
+        _prefs = {
+            'multEpisodePlexPatch': True,
+            'multEpisodeTitleSeparator': ';',
+            'debug': True,
+        }
+
+        for _in, _out in [
+                (
+                    ("""<x><episode>9</episode><title>t1</title><plot>p1</plot>
+                        </x><x><title>t2</title><plot>p2</plot></x>""", '/x/afile.ext', 1, 'x'),
+                    {
+                        'enabled': True,
+                        'nfo_episode_count': 2,
+                        'possible': True,
+                        'summary': '[Episode #9 - t1] p1\n[Episode #2 - t2] p2',
+                        'title': 't1;t2',
+                    },
+                ),
+                (
+                    ("<x><title>b_title</title><plot>b_plot</plot></x>", '/x/afile.ext', 1, 'x'),
+                    {
+                        'enabled': True,
+                        'nfo_episode_count': 1,
+                        'possible': False,  # Only one episode
+                    },
+                ),
+                (
+                    ("<x></x><x></x>", '/x/.S1E1-E1.ext', 1, 'x'),
+                    {
+                        'enabled': True,
+                        'nfo_episode_count': 2,
+                        'possible': False,
+                    },
+                ),
+        ]:
+                xml, output = self.target._multiple_episode_feature(*_in)
+                self.assertEqual(output, _out)
+
+class TestParseEpisode(unittest.TestCase):
+    def setUp(self):
+
+        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult', 'XML']:
+                patcher = patch("__builtin__."+name, create=True)
+                setattr(self, name, patcher.start())
+                self.addCleanup(patcher.stop)
+        self.Agent.TV_Shows = object
+
+        patch('Code.parallelize', create=True).start()
+        import Code
+        self.target = Code.xbmcnfotv()
+
+    def test_parse_episode_nfo_text(self):
+        nfo_xml = ET.fromstring("""<x><title>a_title</title><mpaa>PG</mpaa><plot>aplot</plot></x>""")
+        self.assertEqual(self.target._parse_episode_nfo_text(nfo_xml, {}), {
+            'content_rating':'PG',
+            'title':'a_title',
+            'summary':'aplot',
+        })
+
+    def test_parse_episode_nfo_text_title_overrides(self):
+        nfo_xml = ET.fromstring("""<x><title>a_title</title><mpaa>PG</mpaa></x>""")
+        self.assertEqual(self.target._parse_episode_nfo_text(nfo_xml, {'title':'better title'}), {
+            'content_rating':'PG',
+            'title':'better title',
+        })
 
 if __name__ == '__main__':
     unittest.main()

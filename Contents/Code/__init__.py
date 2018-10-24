@@ -12,16 +12,15 @@
 # Season banner and season art support by Christian
 #
 import os, re, time, datetime, platform, traceback, glob, re, htmlentitydefs
-from dateutil.parser import parse
 import urllib
 import urlparse
+import logging
 
-from utils import _get, time_convert
+from utils import _get, time_convert, check_file_paths, remove_empty_tags, unescape, _parse_dt
 
 PERCENT_RATINGS = {
   'rottentomatoes','rotten tomatoes','rt','flixster'
 }
-
 
 class xbmcnfotv(Agent.TV_Shows):
     name = 'XBMCnfoTVImporter'
@@ -35,55 +34,6 @@ class xbmcnfotv(Agent.TV_Shows):
     def DLog(self, LogMessage):
         if Prefs['debug']:
             Log(LogMessage)
-
-    def checkFilePaths(self, pathfns, ftype):
-        for pathfn in pathfns:
-            if os.path.isdir(pathfn): continue
-            self.DLog("Trying " + pathfn)
-            if not os.path.exists(pathfn):
-                continue
-            else:
-                Log("Found " + ftype + " file " + pathfn)
-                return pathfn
-        else:
-            Log("No " + ftype + " file found! Aborting!")
-
-    def RemoveEmptyTags(self, xmltags):
-        #self.DLog('Removing remaining empty XML Tags from episode nfo...')
-        for xmltag in xmltags.iter("*"):
-            if len(xmltag):
-                continue
-            if not (xmltag.text and xmltag.text.strip()):
-                #self.DLog("Removing empty XMLTag: " + xmltag.tag)
-                xmltag.getparent().remove(xmltag)
-        return xmltags
-
-    ##
-    # Removes HTML or XML character references and entities from a text string.
-    # Copyright: http://effbot.org/zone/re-sub.htm October 28, 2006 | Fredrik Lundh
-    # @param text The HTML (or XML) source text.
-    # @return The plain text, as a Unicode string, if necessary.
-
-    def unescape(self, text):
-        def fixup(m):
-            text = m.group(0)
-            if text[:2] == "&#":
-                # character reference
-                try:
-                    if text[:3] == "&#x":
-                        return unichr(int(text[3:-1], 16))
-                    else:
-                        return unichr(int(text[2:-1]))
-                except ValueError:
-                    pass
-            else:
-                # named entity
-                try:
-                    text = unichr(htmlentitydefs.name2codepoint[text[1:-1]])
-                except KeyError:
-                    pass
-            return text # leave as is
-        return re.sub("&#?\w+;", fixup, text)
 
     def _log_function_entry(self, func_name):
         self.DLog("++++++++++++++++++++++++")
@@ -180,16 +130,6 @@ class xbmcnfotv(Agent.TV_Shows):
             out = matches.group('mpaa')
         return out
 
-    def _parse_dt(self, s):
-        out = None
-        try:
-            if Prefs['dayfirst']:
-                out = parse(s, dayfirst=True)
-            else:
-                out = parse(s)
-        except:
-            pass
-        return out
 
     def _get_premier(self, nfo_xml):
         out = {}
@@ -197,7 +137,7 @@ class xbmcnfotv(Agent.TV_Shows):
             try:
                 s = nfo_xml.xpath(key)[0].text
                 if s:
-                    dt = self._parse_dt(s)
+                    dt = _parse_dt(s, _get(Prefs, 'dayfirst', False))
                     if dt:
                         out['originally_available_at'] = dt
                     break
@@ -283,13 +223,13 @@ class xbmcnfotv(Agent.TV_Shows):
 
         #if Prefs['ratingspos'] == "front":
         #    if Prefs['preserverating']:
-        #        metadata.summary = alt_ratings + self.unescape(" &#9733;\n\n") + metadata.summary
+        #        metadata.summary = alt_ratings + unescape(" &#9733;\n\n") + metadata.summary
         #    else:
-        #        metadata.summary = self.unescape("&#9733; ") + alt_ratings + self.unescape(" &#9733;\n\n") + metadata.summary
+        #        metadata.summary = unescape("&#9733; ") + alt_ratings + unescape(" &#9733;\n\n") + metadata.summary
         #else:
-        #    metadata.summary = metadata.summary + self.unescape("\n\n&#9733; ") + alt_ratings + self.unescape(" &#9733;")
+        #    metadata.summary = metadata.summary + unescape("\n\n&#9733; ") + alt_ratings + unescape(" &#9733;")
         #if Prefs['preserverating']:
-        #    tmp = self.unescape("{}{:.1f}{}".format(Prefs['beforerating'], data['rating'], Prefs['afterrating']))
+        #    tmp = unescape("{}{:.1f}{}".format(Prefs['beforerating'], data['rating'], Prefs['afterrating']))
         #    out.insert(0, tmp)
 
         return " | ".join(out)
@@ -424,7 +364,7 @@ class xbmcnfotv(Agent.TV_Shows):
             Log('ERROR: failed parsing tvshow XML in nfo file')
             return out
 
-        nfo_xml = self.RemoveEmptyTags(nfo_xml)
+        nfo_xml = remove_empty_tags(nfo_xml)
 
         for xml_key, out_key, cast in [
             ('id','id', None),
@@ -533,7 +473,7 @@ class xbmcnfotv(Agent.TV_Shows):
         posterNames.append (os.path.join(path, "show.jpg"))
         posterNames.append (os.path.join(path, "season-all-poster.jpg"))
         # check possible poster file locations
-        posterFilename = self.checkFilePaths (posterNames, 'poster')
+        posterFilename = check_file_paths(posterNames, 'poster')
         if posterFilename:
             posterData = Core.storage.load(posterFilename)
             metadata.posters['poster.jpg'] = Proxy.Media(posterData)
@@ -543,7 +483,7 @@ class xbmcnfotv(Agent.TV_Shows):
         bannerNames.append (os.path.join(path, "banner.jpg"))
         bannerNames.append (os.path.join(path, "folder-banner.jpg"))
         # check possible banner file locations
-        bannerFilename = self.checkFilePaths (bannerNames, 'banner')
+        bannerFilename = check_file_paths (bannerNames, 'banner')
         if bannerFilename:
             bannerData = Core.storage.load(bannerFilename)
             metadata.banners['banner.jpg'] = Proxy.Media(bannerData)
@@ -555,7 +495,7 @@ class xbmcnfotv(Agent.TV_Shows):
         fanartNames.append (os.path.join(path, "backdrop.jpg"))
         fanartNames.append (os.path.join(path, "background.jpg"))
         # check possible fanart file locations
-        fanartFilename = self.checkFilePaths (fanartNames, 'fanart')
+        fanartFilename = check_file_paths(fanartNames, 'fanart')
         if fanartFilename:
             fanartData = Core.storage.load(fanartFilename)
             metadata.art['fanart.jpg'] = Proxy.Media(fanartData)
@@ -564,7 +504,7 @@ class xbmcnfotv(Agent.TV_Shows):
         themeNames = []
         themeNames.append (os.path.join(path, "theme.mp3"))
         # check possible theme file locations
-        themeFilename = self.checkFilePaths (themeNames, 'theme')
+        themeFilename = check_file_paths(themeNames, 'theme')
         if themeFilename:
             themeData = Core.storage.load(themeFilename)
             metadata.themes['theme.mp3'] = Proxy.Media(themeData)
@@ -598,7 +538,7 @@ class xbmcnfotv(Agent.TV_Shows):
         #Fallback to Series Poster
         seasonPosterNames.append (os.path.join(path, "poster.jpg"))
         # check possible season poster file locations
-        seasonPosterFilename = self.checkFilePaths (seasonPosterNames, 'season poster')
+        seasonPosterFilename = check_file_paths(seasonPosterNames, 'season poster')
         if seasonPosterFilename:
             seasonData = Core.storage.load(seasonPosterFilename)
             metadata.seasons[season_num].posters[seasonPosterFilename] = Proxy.Media(seasonData)
@@ -614,7 +554,7 @@ class xbmcnfotv(Agent.TV_Shows):
         seasonBannerNames.append (os.path.join(path, "banner.jpg"))
         seasonBannerNames.append (os.path.join(path, "folder-banner.jpg"))
         # check possible banner file locations
-        seasonBanner = self.checkFilePaths (seasonBannerNames, 'season banner')
+        seasonBanner = check_file_paths(seasonBannerNames, 'season banner')
         if seasonBanner:
             seasonBannerData = Core.storage.load(seasonBanner)
             metadata.seasons[season_num].banners[seasonBanner] = Proxy.Media(seasonBannerData)
@@ -628,7 +568,7 @@ class xbmcnfotv(Agent.TV_Shows):
         seasonFanartNames.append (os.path.join(path, seasonFanartFileName))
         seasonFanartNames.append (os.path.join(path, "fanart.jpg"))
         # check possible Fanart file locations
-        seasonFanart = self.checkFilePaths (seasonFanartNames, 'season fanart')
+        seasonFanart = check_file_paths(seasonFanartNames, 'season fanart')
         if seasonFanart:
             seasonFanartData = Core.storage.load(seasonFanart)
             metadata.seasons[season_num].art[seasonFanart] = Proxy.Media(seasonFanartData)
@@ -697,7 +637,7 @@ class xbmcnfotv(Agent.TV_Shows):
             except:
                 return None, out
 
-            nfo_xml = self.RemoveEmptyTags(nfo_xml)
+            nfo_xml = remove_empty_tags(nfo_xml)
             try:
                 nfo_ep_num = int(nfo_xml.xpath('episode')[0].text)
             except:
@@ -734,7 +674,7 @@ class xbmcnfotv(Agent.TV_Shows):
         #    Log('ERROR: failed parsing tvshow XML in nfo file')
         #    return out
 
-        #nfo_xml = self.RemoveEmptyTags(nfo_xml)
+        #nfo_xml = remove_empty_tags(nfo_xml)
 
         for xml_key, out_key, cast in [
             #('id','id', None),
@@ -783,13 +723,13 @@ class xbmcnfotv(Agent.TV_Shows):
 
         #if Prefs['ratingspos'] == "front":
         #    if Prefs['preserveratingep']:
-        #        metadata.summary = alt_ratings + self.unescape(" &#9733;\n\n") + metadata.summary
+        #        metadata.summary = alt_ratings + unescape(" &#9733;\n\n") + metadata.summary
         #    else:
-        #        metadata.summary = self.unescape("&#9733; ") + alt_ratings + self.unescape(" &#9733;\n\n") + metadata.summary
+        #        metadata.summary = unescape("&#9733; ") + alt_ratings + unescape(" &#9733;\n\n") + metadata.summary
         #else:
-        #    metadata.summary = metadata.summary + self.unescape("\n\n&#9733; ") + alt_ratings + self.unescape(" &#9733;")
+        #    metadata.summary = metadata.summary + unescape("\n\n&#9733; ") + alt_ratings + unescape(" &#9733;")
         #if Prefs['preserveratingep']:
-        #    tmp = self.unescape("{}{:.1f}{}".format(Prefs['beforeratingep'], data['rating'], Prefs['afterratingep']))
+        #    tmp = unescape("{}{:.1f}{}".format(Prefs['beforeratingep'], data['rating'], Prefs['afterratingep']))
         #    out.insert(0, tmp)
 
         return " | ".join(out)
@@ -890,7 +830,7 @@ class xbmcnfotv(Agent.TV_Shows):
             episodeThumbNames.append(nfo_file.replace('.nfo', '.jpg'))
 
             # check possible episode thumb file locations
-            episodeThumbFilename = self.checkFilePaths(episodeThumbNames, 'episode thumb')
+            episodeThumbFilename = check_file_paths(episodeThumbNames, 'episode thumb')
 
             if episodeThumbFilename:
                 thumbData = Core.storage.load(episodeThumbFilename)

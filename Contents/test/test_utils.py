@@ -1,6 +1,8 @@
+import datetime
 import unittest
 
 from mock import Mock, MagicMock, patch
+from lxml import etree as ET
 
 class TestUtilities(unittest.TestCase):
     def setUp(self):
@@ -30,6 +32,80 @@ class TestUtilities(unittest.TestCase):
         self.assertEqual(target._get({}, 'x'), None)
         self.assertEqual(target._get({'x':'y'}, 'x'), 'y')
         self.assertEqual(target._get({'x':None}, 'x', 'something'), 'something')
+
+    def test_check_file_paths_no_input(self):
+        import Code.utils as target
+        out = target.check_file_paths([], 'a_type')
+        self.assertEqual(out, None)
+
+    @patch('os.path')
+    def test_check_file_paths_success(self, mock_path):
+        import Code.utils as target
+        mock_path.isdir.return_value = False
+        mock_path.exists.return_value = True
+        out = target.check_file_paths(['1stfound','y'], 'a_type')
+        self.assertEqual(out, '1stfound')
+        mock_path.exists.assert_called_once_with('1stfound')
+
+    @patch('os.path')
+    def test_check_file_paths_skip_dirs(self, mock_path):
+        import Code.utils as target
+        mock_path.isdir.return_value = True
+        mock_path.exists.return_value = True
+        out = target.check_file_paths(['1stfound','y'], 'a_type')
+        self.assertEqual(out, None)
+
+    @patch('os.path')
+    def test_check_file_paths_skip_non_files(self, mock_path):
+        import Code.utils as target
+        mock_path.isdir.return_value = False
+        mock_path.exists.return_value = False
+        out = target.check_file_paths(['1stfound','y'], 'a_type')
+        self.assertEqual(out, None)
+
+
+    def test_remove_empty_tags(self):
+        import Code.utils as target
+
+        for _in, _out in [
+            ("<x></x>", "<x/>"),
+            ("<x><a>Hello</a><b></b><c> </c></x>", "<x><a>Hello</a></x>"),
+        ]:
+            xml_in = ET.fromstring(_in)
+            val_out = target.remove_empty_tags(xml_in)
+            val_out = ET.tostring(val_out)
+            self.assertEqual(val_out, _out)
+
+    def test_unescape(self):
+        import Code.utils as target
+        for _in, _out in [
+                ("", ""),
+                ("&#1234;", u'\u04d2'),
+                ("&#x1234;", u'\u1234'),
+                ("&x1234;", '&x1234;'),
+                ("&name;", '&name;'),
+                ("&quot;", '"'),
+                ("&amp;", '&'),
+                ("&lt;", "<"),
+                ("&gt;", ">"),
+                ("&#9733;", u'\u2605'), #black star
+                ("&quot;&#&amp;&quot;", u'"&#&"'), # Try multiple
+                ("&#4x0;", '&#4x0;'), # Bad char ref
+        ]:
+                self.assertEqual(target.unescape(_in), _out)
+
+    def test_parse_dt(self):
+        import Code.utils as target
+        expected_dt = datetime.datetime(2018, 8, 11, 0, 0)
+        for _in, _out in [
+            (("08.11.2018", False), expected_dt),
+            (("08/11/2018", False), expected_dt),
+            (("Garbage",    False), None),
+            (("11.08.2018", True),  expected_dt),
+            (("11/08/2018", True),  expected_dt),
+            (("Garbage",    True),  None),
+        ]:
+            self.assertEqual(target._parse_dt(*_in), _out)
 
 if __name__ == '__main__':
     unittest.main()

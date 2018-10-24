@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 
 import unittest
-import datetime
-from mock import Mock, MagicMock, patch
 
+from mock import Mock, MagicMock, patch
 from lxml import etree as ET
 
 class AnyStringWith(str):
@@ -41,21 +40,9 @@ class TestUtilities(unittest.TestCase):
         self.target.DLog("Anything")
         self.Log.assert_not_called()
 
-    def test_parse_dt(self):
-        expected_dt = datetime.datetime(2018, 8, 11, 0, 0)
-        for _pref, _in, _out in [
-            (False, "08.11.2018", expected_dt),
-            (False, "08/11/2018", expected_dt),
-            (False, "Garbage", None),
-            (True, "11.08.2018", expected_dt),
-            (True, "11/08/2018", expected_dt),
-            (True, "Garbage", None),
-        ]:
-            self.Prefs.__getitem__.return_value = _pref
-            self.assertEqual(self.target._parse_dt(_in), _out)
 
-    def test_get_premier(self):
-        self.target._parse_dt = Mock(side_effect=lambda x:x)
+    @patch('Code._parse_dt', side_effect=lambda x,y: x)
+    def test_get_premier(self, mock_utils):
         for _in, _out in [
             ("<x><aired>XXX</aired></x>", {'originally_available_at':'XXX'}),
             ("<x><premiered>XXX</premiered></x>", {'originally_available_at':'XXX'}),
@@ -74,6 +61,25 @@ class TestUtilities(unittest.TestCase):
         ]:
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_directors(xml), _out)
+
+    def test_get_collections_from_set(self):
+        for _in, _out in [
+            ("<x></x>", []),
+            ("<x><set><name>a_name</name></set></x>", ['a_name']),
+            ("<x><set>a_name</set></x>", ['a_name']),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_collections_from_set(xml), _out)
+
+    def test_get_collections_from_tags(self):
+        for _in, _out in [
+            ("<x></x>", []),
+            ("<x><tag>single</tag></x>", ['single']),
+            ("<x><tag>multi</tag><tag>tags</tag></x>", ['multi','tags']),
+            ("<x><tag>mul/ti</tag><tag>ta/gs</tag></x>", ['mul','ti','ta','gs']),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_collections_from_tags(xml), _out)
 
     def test_get_duration(self):
         for _in, _out in [
@@ -136,56 +142,7 @@ class TestUtilities(unittest.TestCase):
                 self.assertEqual(self.target._set_duration_as_avg_of_episodes(_in), _out)
 
 
-    def test_check_file_paths_no_input(self):
-        out = self.target.checkFilePaths([], 'a_type')
-        self.assertEqual(out, None)
-        self.Log.assert_called_once_with(AnyStringWith('a_type'))
 
-    @patch('os.path')
-    def test_check_file_paths_success(self, mock_path):
-        mock_path.isdir.return_value = False
-        mock_path.exists.return_value = True
-        out = self.target.checkFilePaths(['1stfound','y'], 'a_type')
-        self.assertEqual(out, '1stfound')
-        mock_path.exists.assert_called_once_with('1stfound')
-        self.Log.assert_called_with(AnyStringWith('Found a_type'))
-
-    @patch('os.path')
-    def test_check_file_paths_skip_dirs(self, mock_path):
-        mock_path.isdir.return_value = True
-        mock_path.exists.return_value = True
-        out = self.target.checkFilePaths(['1stfound','y'], 'a_type')
-        self.assertEqual(out, None)
-
-    @patch('os.path')
-    def test_check_file_paths_skip_non_files(self, mock_path):
-        mock_path.isdir.return_value = False
-        mock_path.exists.return_value = False
-        out = self.target.checkFilePaths(['1stfound','y'], 'a_type')
-        self.assertEqual(out, None)
-
-    def test_remove_empty_tags(self):
-        _in = ET.fromstring("<x><a>Hello</a><b></b><c> </c></x>")
-        _out = ET.fromstring("<x><a>Hello</a></x>")
-        out = self.target.RemoveEmptyTags(_in)
-        self.assertTrue(ET.tostring(out), ET.tostring(_out))
-
-    def test_unescape(self):
-        for _in, _out in [
-                ("", ""),
-                ("&#1234;", u'\u04d2'),
-                ("&#x1234;", u'\u1234'),
-                ("&x1234;", '&x1234;'),
-                ("&name;", '&name;'),
-                ("&quot;", '"'),
-                ("&amp;", '&'),
-                ("&lt;", "<"),
-                ("&gt;", ">"),
-                ("&#9733;", u'\u2605'), #black star
-                ("&quot;&#&amp;&quot;", u'"&#&"'), # Try multiple
-                ("&#4x0;", '&#4x0;'), # Bad char ref
-        ]:
-                self.assertEqual(self.target.unescape(_in), _out)
 
     def test_log_function_entry(self):
         self.Prefs.__getitem__.return_value = True

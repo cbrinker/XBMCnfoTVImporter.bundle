@@ -1,4 +1,6 @@
 #!/bin/bash
 
 export PYTHONDONTWRITEBYTECODE=1
-python -m unittest discover
+coverage run -m unittest discover
+
+coverage report -m Code/*.py

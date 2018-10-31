@@ -16,7 +16,9 @@ import urllib
 import urlparse
 import logging
 
-from utils import _get, time_convert, check_file_paths, remove_empty_tags, unescape, _parse_dt
+from utils import _get, time_convert, check_file_paths, remove_empty_tags, unescape, _parse_dt, _sanitize_nfo
+
+from pms_gateway import PmsGateway
 
 PERCENT_RATINGS = {
   'rottentomatoes','rotten tomatoes','rt','flixster'
@@ -29,6 +31,9 @@ class xbmcnfotv(Agent.TV_Shows):
     languages = [Locale.Language.NoLanguage]
     accepts_from = ['com.plexapp.agents.localmedia','com.plexapp.agents.opensubtitles','com.plexapp.agents.podnapisi','com.plexapp.agents.plexthememusic','com.plexapp.agents.subzero']
     contributes_to = ['com.plexapp.agents.thetvdb']
+
+    def __init__(self):
+        self.pms = PmsGateway(XML, String)
 
 ##### helper functions #####
     def DLog(self, LogMessage):
@@ -46,16 +51,6 @@ class xbmcnfotv(Agent.TV_Shows):
             Log ('Agents debug logging is enabled!')
         else:
             Log ('Agents debug logging is disabled!')
-
-
-    def _find_mediafiles_for_id(self, key):
-        if 'metadata' not in key:
-            key = "/library/metadata/{}".format(key)
-        pageUrl = "http://127.0.0.1:32400" + key + "/tree"
-        out = []
-        for mediapart in XML.ElementFromURL(pageUrl).xpath('//MediaPart'):
-            out.append(String.Unquote(mediapart.get('file').encode('utf-8')))
-        return out
 
 
     def _find_nfo_for_file(self, filename, algo='tvshow'):
@@ -83,32 +78,6 @@ class xbmcnfotv(Agent.TV_Shows):
                 return candidate_path
         Log("No '%s' file found for '%s'" % (nfo_name, filename))
         return None
-
-
-    def _sanitize_nfo(self, nfo_text, root_tag, strip_tags=None):
-        # work around failing XML parses for things with &'s in them. This may need to go farther than just &'s....
-        nfo_text = re.sub(r'&(?![A-Za-z]+[0-9]*;|#[0-9]+;|#x[0-9a-fA-F]+;)', r'&amp;', nfo_text)
-        # remove empty xml tags from nfo
-
-        #self.DLog('Removing empty XML tags from tvshows nfo...')
-        nfo_text = re.sub(r'^\s*<.*/>[\r\n]+', '', nfo_text, flags = re.MULTILINE)
-
-        # TODO lower all supplied xml tags
-
-        end_root_tag = "</%s>" % root_tag
-        if nfo_text.count(end_root_tag) > 0:
-            # Remove URLs (or other stuff) at the end of the XML file
-            boom = nfo_text.split(end_root_tag)
-            boom[-1] = ""
-            nfo_text = end_root_tag.join(boom)
-
-        if strip_tags:
-            for tag in strip_tags:
-                nfo_text = nfo_text.replace('</{}>'.format(tag), '')
-                nfo_text = nfo_text.replace('<{}>'.format(tag), '')
-                nfo_text = nfo_text.replace('<{}/>'.format(tag), '')
-
-        return nfo_text
 
 
     def _guess_title_by_mediafile(self, mediafile):
@@ -195,7 +164,7 @@ class xbmcnfotv(Agent.TV_Shows):
         else:
             return {}
 
-    def _get_duration(self, nfo_xml):
+    def _get_duration_ms(self, nfo_xml):
         out = {}
         for key in ['durationinseconds', 'runtime']:
             try:
@@ -389,7 +358,7 @@ class xbmcnfotv(Agent.TV_Shows):
 
         out.update(self._get_premier(nfo_xml))
         out.update(self._get_ratings(nfo_xml))
-        out.update(self._get_duration(nfo_xml))
+        out.update(self._get_duration_ms(nfo_xml))
         out.update(self._get_alt_ratings(nfo_xml))
         out.update(self._get_actors(nfo_xml))
 
@@ -415,12 +384,13 @@ class xbmcnfotv(Agent.TV_Shows):
             out['nfo_file'] = nfo_file  # needed later to try to find local artwork/dirs
             Log("Found nfo file at '%s', parsing" % nfo_file)
             nfo_text = Core.storage.load(nfo_file)
-            nfo_text = self._sanitize_nfo(nfo_text, 'tvshow')
+            nfo_text = _sanitize_nfo(nfo_text, 'tvshow')
             out.update(self._parse_tvshow_nfo_text(nfo_text))
         return out
 
 
     def search(self, results, media, lang):
+
         self._log_function_entry('search')
 
         record = {
@@ -433,7 +403,7 @@ class xbmcnfotv(Agent.TV_Shows):
         }
 
         try:
-            mediafile = self._find_mediafiles_for_id(record['id'])[0]
+            mediafile = self.pms._find_mediafiles_for_id(record['id'])[0]
         except:
             Log("Error trying to find mediafile for id: '%s'" % record['id'])
             self.DLog("Traceback: %s" % traceback.format_exc())
@@ -701,7 +671,7 @@ class xbmcnfotv(Agent.TV_Shows):
 
         out.update(self._get_premier(nfo_xml))
         out.update(self._get_ratings(nfo_xml))
-        out.update(self._get_duration(nfo_xml))
+        out.update(self._get_duration_ms(nfo_xml))
         out.update(self._get_alt_ratings(nfo_xml))
         #out.update(self._get_actors(nfo_xml))
         out.update(self._get_directors(nfo_xml))
@@ -779,14 +749,14 @@ class xbmcnfotv(Agent.TV_Shows):
         if 'allLeaves' in ep_key: # Non-episode node, skip it
             return
 
-        mediafile = self._find_mediafiles_for_id(ep_key)[0]
+        mediafile = self.pms._find_mediafiles_for_id(ep_key)[0]
         nfo_file = self._find_nfo_for_file(mediafile, algo='episode')
 
         if not nfo_file:
             return
 
         nfo_text = Core.storage.load(nfo_file)
-        nfo_text = self._sanitize_nfo(nfo_text, 'episodedetails', strip_tags=[
+        nfo_text = _sanitize_nfo(nfo_text, 'episodedetails', strip_tags=[
             'multiepisodenfo', # Media Browser tags
             'xbmcmultiepisode', # Sick Beard tags
         ])
@@ -936,7 +906,7 @@ class xbmcnfotv(Agent.TV_Shows):
         Log('Update called for TV Show with id = ' + record['id'])
 
         try:
-            mediafile = self._find_mediafiles_for_id(record['id'])[0]
+            mediafile = self.pms._find_mediafiles_for_id(record['id'])[0]
         except:
             Log("Error trying to find mediafile for id: '%s'" % record['id'])
             self.DLog("Traceback: %s" % traceback.format_exc())
@@ -1029,23 +999,5 @@ class xbmcnfotv(Agent.TV_Shows):
         #Log("---------------------")
         #self.DLog("Average series episode duration set to: {}".format(metadata.duration))
 
-class TvShow(object):
-    episodes = []
-
-    def __init__(self):
-        pass
-
-    def _from_nfo(self, nfo_text):
-        """All the smarts to parse the contents of a .nfo file"""
-        pass
-
-
-class Episode(object):
-    def __init__(self):
-        pass
-
-    def _from_nfo(self, nfo_text):
-        """All the smarts to parse the contents of a .nfo file"""
-        pass
 
 

@@ -107,5 +107,21 @@ class TestUtilities(unittest.TestCase):
         ]:
             self.assertEqual(target._parse_dt(*_in), _out)
 
+    def test_sanitize_nfo(self):
+        import Code.utils as target
+        for _in, _out in [
+                ("<tvshow>\n<a>Hi&lo&amp;w</a>\n<x/>\n</tvshow>Some garbage", '<tvshow>\n<a>Hi&amp;lo&amp;w</a>\n</tvshow>'),
+                ("<tvshow>\n<a>Hi&lo&amp;w</a>\n<x/>\n</tvshow>", '<tvshow>\n<a>Hi&amp;lo&amp;w</a>\n</tvshow>'),
+                ("<tvshow>X</tvshow>\n<tvshow>Y</tvshow>XXXX", '<tvshow>X</tvshow>\n<tvshow>Y</tvshow>'),
+                ("<tvshow>X</tvshow>\n<tvshow>Y</tvshow>", '<tvshow>X</tvshow>\n<tvshow>Y</tvshow>'),
+                ("<tvshow/>", '<tvshow/>'),
+        ]:
+                self.assertEqual(target._sanitize_nfo(_in, 'tvshow'), _out)
+
+        for _in, _out in [
+                ("before<x>during</x><x/>after", 'beforeduringafter'),
+        ]:
+                self.assertEqual(target._sanitize_nfo(_in, 'y', ['x']), _out)
+
 if __name__ == '__main__':
     unittest.main()

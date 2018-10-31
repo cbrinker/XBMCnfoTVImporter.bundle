@@ -80,3 +80,29 @@ def _parse_dt(text, dayfirst=False):
     except:
         pass
     return out
+
+
+def _sanitize_nfo(nfo_text, root_tag, strip_tags=None):
+    # work around failing XML parses for things with &'s in them. This may need to go farther than just &'s....
+    nfo_text = re.sub(r'&(?![A-Za-z]+[0-9]*;|#[0-9]+;|#x[0-9a-fA-F]+;)', r'&amp;', nfo_text)
+    # remove empty xml tags from nfo
+
+    logging.debug('Removing empty XML tags from tvshows nfo...')
+    nfo_text = re.sub(r'^\s*<.*/>[\r\n]+', '', nfo_text, flags = re.MULTILINE)
+
+    # TODO lower all supplied xml tags
+
+    end_root_tag = "</%s>" % root_tag
+    if nfo_text.count(end_root_tag) > 0:
+        # Remove URLs (or other stuff) at the end of the XML file
+        boom = nfo_text.split(end_root_tag)
+        boom[-1] = ""
+        nfo_text = end_root_tag.join(boom)
+
+    if strip_tags:
+        for tag in strip_tags:
+            nfo_text = nfo_text.replace('</{}>'.format(tag), '')
+            nfo_text = nfo_text.replace('<{}>'.format(tag), '')
+            nfo_text = nfo_text.replace('<{}/>'.format(tag), '')
+
+    return nfo_text

@@ -81,7 +81,7 @@ class TestUtilities(unittest.TestCase):
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_collections_from_tags(xml), _out)
 
-    def test_get_duration(self):
+    def test_get_duration_ms(self):
         for _in, _out in [
             ("<x></x>", {}),
             ("<x><fileinfo><streamdetails><video><durationinseconds>123</durationinseconds></video></streamdetails></fileinfo></x>", {'duration': 123000}),
@@ -90,7 +90,7 @@ class TestUtilities(unittest.TestCase):
             ("<x><runtime>6</runtime></x>", {'duration': 360000}),
         ]:
             xml = ET.fromstring(_in)
-            self.assertEqual(self.target._get_duration(xml), _out)
+            self.assertEqual(self.target._get_duration_ms(xml), _out)
 
     def test_get_credites(self):
         for _in, _out in [
@@ -166,29 +166,8 @@ class TestUtilities(unittest.TestCase):
                 self.assertEqual(self.target._generate_id_from_title(_in), _out)
 
 
-    def test_find_mediafile_for_id(self):
-        self.XML.ElementFromURL.return_value.xpath.return_value = [{'file':'file_value'}]
-        self.String.Unquote.side_effect = lambda x: x
-
-        self.assertEqual(self.target._find_mediafiles_for_id('18879'), ['file_value'])
-        self.XML.ElementFromURL.assert_called_once_with(AnyStringWith('18879'))
-        self.String.Unquote.assert_called_once_with('file_value')
 
 
-    def test_sanitize_nfo(self):
-        for _in, _out in [
-                ("<tvshow>\n<a>Hi&lo&amp;w</a>\n<x/>\n</tvshow>Some garbage", '<tvshow>\n<a>Hi&amp;lo&amp;w</a>\n</tvshow>'),
-                ("<tvshow>\n<a>Hi&lo&amp;w</a>\n<x/>\n</tvshow>", '<tvshow>\n<a>Hi&amp;lo&amp;w</a>\n</tvshow>'),
-                ("<tvshow>X</tvshow>\n<tvshow>Y</tvshow>XXXX", '<tvshow>X</tvshow>\n<tvshow>Y</tvshow>'),
-                ("<tvshow>X</tvshow>\n<tvshow>Y</tvshow>", '<tvshow>X</tvshow>\n<tvshow>Y</tvshow>'),
-                ("<tvshow/>", '<tvshow/>'),
-        ]:
-                self.assertEqual(self.target._sanitize_nfo(_in, 'tvshow'), _out)
-
-        for _in, _out in [
-                ("before<x>during</x><x/>after", 'beforeduringafter'),
-        ]:
-                self.assertEqual(self.target._sanitize_nfo(_in, 'y', ['x']), _out)
 
     @patch('os.path')
     def test_find_nfo_for_file_tvshow(self, mock_path):
@@ -262,15 +241,15 @@ class TestUtilities(unittest.TestCase):
         self.Log.assert_called_once_with(AnyStringWith('failed parsing'))
 
 
-    def test_extract_info_for_mediafile(self):
+    @patch('Code._sanitize_nfo')
+    def test_extract_info_for_mediafile(self, _sanitize_nfo):
         self.target._find_nfo_for_file = Mock(return_value = "afile.nfo")
         self.Core.storage.return_value.load.return_value = 'some text'
-        self.target._sanitize_nfo = Mock(return_value = 'sanitized text')
         self.target._parse_tvshow_nfo_text = Mock(return_value = {'made':'it'})
 
         self.assertEqual(self.target._extract_info_for_mediafile("afile.ext"), {'made':'it','nfo_file':'afile.nfo'})
         self.Core.storage.load.assert_called_once_with('afile.nfo')
-        self.target._sanitize_nfo.assert_called() # Make sure we are sanitizing
+        _sanitize_nfo.assert_called() # Make sure we are sanitizing
         self.target._parse_tvshow_nfo_text.assert_called()
 
         #Sad path
@@ -289,7 +268,7 @@ class TestUtilities(unittest.TestCase):
 class TestSearch(unittest.TestCase):
     def setUp(self):
 
-        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult']:
+        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult', 'XML', 'String']:
                 patcher = patch("__builtin__."+name, create=True)
                 setattr(self, name, patcher.start())
                 self.addCleanup(patcher.stop)
@@ -307,7 +286,10 @@ class TestSearch(unittest.TestCase):
         lang = 'alang'
         extracted = {'id':'a_id', 'year':1970, 'title':'a_title', 'sorttitle':'a_sorttitle'}
         self.target._extract_info_for_mediafile = Mock(return_value=extracted)
-        self.target._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
+        
+        pms = Mock()
+        pms._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
+        self.target.pms = pms
 
         self.assertEqual(self.target.search(results, media, lang), None)
 
@@ -317,7 +299,11 @@ class TestSearch(unittest.TestCase):
 
     @patch('os.path')
     def test_search_error_with_mediafile(self, mock_path):
-        self.target._find_mediafiles_for_id = Mock(side_effect=Exception())
+        pms = Mock()
+        pms._find_mediafiles_for_id = Mock(side_effect=Exception())
+        self.target.pms = pms
+        #self.pms._find_mediafiles_for_id = Mock(side_effect=Exception())
+        #self.target._find_mediafiles_for_id = Mock(side_effect=Exception())
 
         self.assertEqual(self.target.search(Mock(), Mock(), Mock()), None)
 
@@ -326,7 +312,10 @@ class TestSearch(unittest.TestCase):
     @patch('os.path')
     def test_search_with_guessing(self, mock_path):
         results = Mock()
-        self.target._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
+        pms = Mock()
+        pms._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
+        self.target.pms = pms
+        #self.target._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
         self.target._extract_info_for_mediafile = Mock(return_value={})
         self.target._guess_title_by_mediafile = Mock(return_value='a_guess')
         self.target._generate_id_from_title = Mock(return_value='12345')
@@ -340,7 +329,7 @@ class TestSearch(unittest.TestCase):
 class TestMultipleEpisode(unittest.TestCase):
     def setUp(self):
 
-        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult', 'XML']:
+        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult', 'XML', 'String']:
                 patcher = patch("__builtin__."+name, create=True)
                 setattr(self, name, patcher.start())
                 self.addCleanup(patcher.stop)
@@ -396,7 +385,7 @@ class TestMultipleEpisode(unittest.TestCase):
 class TestParseEpisode(unittest.TestCase):
     def setUp(self):
 
-        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult', 'XML']:
+        for name in ['Log', 'Locale', 'Prefs', 'Agent', 'Platform', 'MetadataSearchResult', 'XML', 'String']:
                 patcher = patch("__builtin__."+name, create=True)
                 setattr(self, name, patcher.start())
                 self.addCleanup(patcher.stop)

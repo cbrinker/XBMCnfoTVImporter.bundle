@@ -16,9 +16,10 @@ import urllib
 import urlparse
 import logging
 
-from utils import _get, time_convert, check_file_paths, remove_empty_tags, unescape, _parse_dt, _sanitize_nfo
+from utils import _get, check_file_paths, remove_empty_tags, unescape, _sanitize_nfo
 
 from pms_gateway import PmsGateway
+from nfo_parser import NfoParser
 
 PERCENT_RATINGS = {
   'rottentomatoes','rotten tomatoes','rt','flixster'
@@ -34,6 +35,7 @@ class xbmcnfotv(Agent.TV_Shows):
 
     def __init__(self):
         self.pms = PmsGateway(XML, String)
+        self.parser = NfoParser(Prefs)
 
 ##### helper functions #####
     def DLog(self, LogMessage):
@@ -92,42 +94,6 @@ class xbmcnfotv(Agent.TV_Shows):
         self.DLog("Title guess of: '%s'" % out)
         return out
 
-    def _parse_rating(self, text):
-        out = 'NR'
-        matches = re.compile(r'(?:Rated\s)?(?P<mpaa>[A-z0-9-+/.]+(?:\s[0-9]+[A-z]?)?)?').match(text)
-        if matches.group('mpaa'):
-            out = matches.group('mpaa')
-        return out
-
-
-    def _get_premier(self, nfo_xml):
-        out = {}
-        for key in ['aired', 'premiered', 'dateadded']:
-            try:
-                s = nfo_xml.xpath(key)[0].text
-                if s:
-                    dt = _parse_dt(s, _get(Prefs, 'dayfirst', False))
-                    if dt:
-                        out['originally_available_at'] = dt
-                    break
-            except:
-                pass
-        return out
-
-    def _get_ratings(self, nfo_xml):
-        out = {}
-
-        rating = 0.0
-        try:
-            rating_vals = nfo_xml.xpath(".//rating/value")
-            rating_text = rating_vals[0].text
-            rating = rating_text.replace(',', '.')
-            rating = round(float(rating), 1)
-            out['rating'] = rating
-        except:
-            pass
-        return out
-
 
     def _get_alt_ratings(self, nfo_xml):
         #{'atr_ratings': [(provider,rating)]}
@@ -163,23 +129,6 @@ class xbmcnfotv(Agent.TV_Shows):
             return {'alt_ratings': alt_ratings}
         else:
             return {}
-
-    def _get_duration_ms(self, nfo_xml):
-        out = {}
-        for key in ['durationinseconds', 'runtime']:
-            try:
-                v = nfo_xml.xpath(".//{}".format(key))[0].text
-                v = int(re.compile('^([0-9]+)').findall(v)[0])
-                if key == 'durationinseconds':
-                    v *= 1000
-                elif key == 'runtime':
-                    v = time_convert(v)
-                if v:
-                    out['duration'] = v
-                    break
-            except:
-                pass
-        return out
 
     def _build_show_summary(self, data):
         out = []
@@ -343,7 +292,7 @@ class xbmcnfotv(Agent.TV_Shows):
             ('originaltitle','original_title', None),
             ('year','year', int),
             ('tagline','tagline', None), # Not supported by TVShow obj?
-            ('mpaa','content_rating', self._parse_rating),
+            ('mpaa','content_rating', self.parser._parse_rating),
             ('genre','genres', lambda x:[y.strip() for y in x.split("/")]),
             ('status','status',lambda x: x.strip()),
             ('plot','plot', None), 
@@ -356,9 +305,9 @@ class xbmcnfotv(Agent.TV_Shows):
             except:
                 self.DLog("No <%s> tag found in nfo file." % out_key)
 
-        out.update(self._get_premier(nfo_xml))
-        out.update(self._get_ratings(nfo_xml))
-        out.update(self._get_duration_ms(nfo_xml))
+        out.update(self.parser._get_premier(nfo_xml))
+        out.update(self.parser._get_ratings(nfo_xml))
+        out.update(self.parser._get_duration_ms(nfo_xml))
         out.update(self._get_alt_ratings(nfo_xml))
         out.update(self._get_actors(nfo_xml))
 
@@ -654,7 +603,7 @@ class xbmcnfotv(Agent.TV_Shows):
             #('originaltitle','original_title', None),
             #('year','year', int),
             #('tagline','tagline', None), # Not supported by TVShow obj?
-            ('mpaa','content_rating', self._parse_rating),
+            ('mpaa','content_rating', self.parser._parse_rating),
             #('genre','genres', lambda x:[y.strip() for y in x.split("/")]),
             #('status','status',lambda x: x.strip()),
             ('plot','summary', None), 
@@ -669,12 +618,12 @@ class xbmcnfotv(Agent.TV_Shows):
             except:
                 self.DLog("No <%s> tag found in nfo file." % out_key)
 
-        out.update(self._get_premier(nfo_xml))
-        out.update(self._get_ratings(nfo_xml))
-        out.update(self._get_duration_ms(nfo_xml))
+        out.update(self.parser._get_premier(nfo_xml))
+        out.update(self.parser._get_ratings(nfo_xml))
+        out.update(self.parser._get_duration_ms(nfo_xml))
         out.update(self._get_alt_ratings(nfo_xml))
         #out.update(self._get_actors(nfo_xml))
-        out.update(self._get_directors(nfo_xml))
+        out.update(self.parser._get_directors(nfo_xml))
         out.update(self._get_credits(nfo_xml))
 
         #collections = []
@@ -704,18 +653,6 @@ class xbmcnfotv(Agent.TV_Shows):
 
         return " | ".join(out)
 
-    def _get_directors(self, nfo_xml):
-        out = {}
-        directors = []
-        try:
-            for node in nfo_xml.xpath('director'):
-                value = node.text.split("/")
-                directors += [x.strip() for x in value]
-            if len(directors):
-                out['directors'] = sorted(list(set(directors)))
-        except:
-            pass
-        return out
 
     def _get_credits(self, nfo_xml):
         out = {

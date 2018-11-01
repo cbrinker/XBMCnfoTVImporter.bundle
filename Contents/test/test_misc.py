@@ -40,28 +40,6 @@ class TestUtilities(unittest.TestCase):
         self.target.DLog("Anything")
         self.Log.assert_not_called()
 
-
-    @patch('Code._parse_dt', side_effect=lambda x,y: x)
-    def test_get_premier(self, mock_utils):
-        for _in, _out in [
-            ("<x><aired>XXX</aired></x>", {'originally_available_at':'XXX'}),
-            ("<x><premiered>XXX</premiered></x>", {'originally_available_at':'XXX'}),
-            ("<x><dateadded>XXX</dateadded></x>", {'originally_available_at':'XXX'}),
-            ("<x><aired>XXX</aired><premiered>YYY</premiered><dateadded>ZZZ</dateadded></x>", {'originally_available_at':'XXX'}),
-        ]:
-            xml = ET.fromstring(_in)
-            self.assertEqual(self.target._get_premier(xml), _out)
-
-    def test_get_directors(self):
-        for _in, _out in [
-            ("<x></x>", {}),
-            ("<x><director>d1</director></x>", {'directors': ['d1']}),
-            ("<x><director>d3/d2 /d1</director></x>", {'directors':['d1','d2','d3']}),
-            ("<x><director>d3/d3</director></x>", {'directors':['d3']}),
-        ]:
-            xml = ET.fromstring(_in)
-            self.assertEqual(self.target._get_directors(xml), _out)
-
     def test_get_collections_from_set(self):
         for _in, _out in [
             ("<x></x>", []),
@@ -81,18 +59,7 @@ class TestUtilities(unittest.TestCase):
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_collections_from_tags(xml), _out)
 
-    def test_get_duration_ms(self):
-        for _in, _out in [
-            ("<x></x>", {}),
-            ("<x><fileinfo><streamdetails><video><durationinseconds>123</durationinseconds></video></streamdetails></fileinfo></x>", {'duration': 123000}),
-            ("<x><runtime>Garbage</runtime></x>", {}),
-            ("<x><runtime>01X</runtime></x>", {'duration': 3600000}),
-            ("<x><runtime>6</runtime></x>", {'duration': 360000}),
-        ]:
-            xml = ET.fromstring(_in)
-            self.assertEqual(self.target._get_duration_ms(xml), _out)
-
-    def test_get_credites(self):
+    def test_get_credits(self):
         for _in, _out in [
             ("<x></x>", {}),
             ("<x><credits>c1</credits></x>", {'writers': ['c1']}),
@@ -109,17 +76,6 @@ class TestUtilities(unittest.TestCase):
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_credits(xml), _out)
 
-    def test_get_ratings(self):
-        for _in, _out in [
-            ("<x></x>", {}),
-            ("<x><rating><value>8.8</value></rating><rating><value>9.9</value></rating></x>", {'rating': 8.8}),
-            ("<x><rating><value>8</value></rating></x>", {'rating': 8.0}),
-            ("<x><rating><value>1.54</value></rating></x>", {'rating': 1.5}),
-            ("<x><rating><value>1,54</value></rating></x>", {'rating': 1.5}),
-            ("<x><rating><value>0.2</value></rating></x>", {'rating': 0.2}),
-        ]:
-            xml = ET.fromstring(_in)
-            self.assertEqual(self.target._get_ratings(xml), _out)
 
     def test_debug_logging(self):
         msg = "A test message"

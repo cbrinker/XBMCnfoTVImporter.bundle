@@ -59,22 +59,6 @@ class TestUtilities(unittest.TestCase):
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_collections_from_tags(xml), _out)
 
-    def test_get_credits(self):
-        for _in, _out in [
-            ("<x></x>", {}),
-            ("<x><credits>c1</credits></x>", {'writers': ['c1']}),
-            ("<x><credits>c1/c2</credits></x>", {'writers': ['c1','c2']}),
-            ("<x><credits>c1</credits><credits>c2</credits></x>", {'writers': ['c1','c2']}),
-            ("<x><credits>(Producer)p1</credits></x>", {'producers': ['p1']}),
-            ("<x><credits>p1(Producer)</credits></x>", {'producers': ['p1']}),
-            ("<x><credits>(Writer)w1</credits></x>", {'writers': ['w1']}),
-            ("<x><credits>w1(Writer)</credits></x>", {'writers': ['w1']}),
-            ("<x><credits>(Guest Star)gs1</credits></x>", {'guest_stars': ['gs1']}),
-            ("<x><credits>gs1(Guest Star)</credits></x>", {'guest_stars': ['gs1']}),
-            ("<x><credits>gs2 (Guest Star)/(Producer)p2</credits></x>", {'producers': ['p2'],'guest_stars':['gs2']}),
-        ]:
-            xml = ET.fromstring(_in)
-            self.assertEqual(self.target._get_credits(xml), _out)
 
 
     def test_debug_logging(self):

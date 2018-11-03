@@ -21,9 +21,6 @@ from utils import _get, check_file_paths, remove_empty_tags, unescape, _sanitize
 from pms_gateway import PmsGateway
 from nfo_parser import NfoParser
 
-PERCENT_RATINGS = {
-  'rottentomatoes','rotten tomatoes','rt','flixster'
-}
 
 class xbmcnfotv(Agent.TV_Shows):
     name = 'XBMCnfoTVImporter'
@@ -95,40 +92,6 @@ class xbmcnfotv(Agent.TV_Shows):
         return out
 
 
-    def _get_alt_ratings(self, nfo_xml):
-        #{'atr_ratings': [(provider,rating)]}
-
-        if not Prefs['altratings']:
-            return {}
-
-        allowed_ratings = Prefs['ratings']
-        if not allowed_ratings:
-            allowed_ratings = "ALL"
-
-        additional_ratings = []
-        try:
-            additional_ratings = nfo_xml.xpath('ratings')
-            if not additional_ratings:
-                return {}  # Not Found in xml, abort
-        except:
-            pass
-
-        alt_ratings = []
-        for addratingXML in additional_ratings:
-            for addrating in addratingXML:
-                try:
-                    rating_provider = str(addrating.attrib['moviedb'])
-                    value = str(addrating.text.replace(',', '.'))
-                    if rating_provider.lower() in PERCENT_RATINGS:
-                        value = value + "%"
-                    if allowed_ratings == "ALL" or rating_provider in allowed_ratings:
-                        alt_ratings.append((rating_provider, value))
-                except:
-                    self.DLog("Skipping additional rating without moviedb attribute!")
-        if len(alt_ratings):
-            return {'alt_ratings': alt_ratings}
-        else:
-            return {}
 
     def _build_show_summary(self, data):
         out = []
@@ -308,7 +271,7 @@ class xbmcnfotv(Agent.TV_Shows):
         out.update(self.parser._get_premier(nfo_xml))
         out.update(self.parser._get_ratings(nfo_xml))
         out.update(self.parser._get_duration_ms(nfo_xml))
-        out.update(self._get_alt_ratings(nfo_xml))
+        out.update(self.parser._get_alt_ratings(nfo_xml))
         out.update(self._get_actors(nfo_xml))
 
         collections = []
@@ -621,10 +584,10 @@ class xbmcnfotv(Agent.TV_Shows):
         out.update(self.parser._get_premier(nfo_xml))
         out.update(self.parser._get_ratings(nfo_xml))
         out.update(self.parser._get_duration_ms(nfo_xml))
-        out.update(self._get_alt_ratings(nfo_xml))
+        out.update(self.parser._get_alt_ratings(nfo_xml))
         #out.update(self._get_actors(nfo_xml))
         out.update(self.parser._get_directors(nfo_xml))
-        out.update(self._get_credits(nfo_xml))
+        out.update(self.parser._get_credits(nfo_xml))
 
         #collections = []
         #collections += self._get_collections_from_set(nfo_xml)
@@ -653,33 +616,6 @@ class xbmcnfotv(Agent.TV_Shows):
 
         return " | ".join(out)
 
-
-    def _get_credits(self, nfo_xml):
-        out = {
-            'producers': [],
-            'writers': [],
-            'guest_stars': [],
-        }
-        try:
-            for node in nfo_xml.xpath('credits'):
-                for credit in node.text.split("/"):
-                    if re.search("(Producer)", credit, re.IGNORECASE):
-                        credit = re.sub ("\(Producer\)","",credit,flags=re.I).strip()
-                        out['producers'].append(credit)
-                    elif re.search("(Guest Star)", credit, re.IGNORECASE):
-                        credit = re.sub ("\(Guest Star\)","",credit,flags=re.I).strip()
-                        out['guest_stars'].append(credit)
-                    elif re.search("(Writer)", credit, re.IGNORECASE):
-                        credit = re.sub ("\(Writer\)","",credit,flags=re.I).strip()
-                        out['writers'].append(credit)
-                    else:
-                        out['writers'].append(credit) # Unknown
-        except:
-            pass
-        for k, v in out.items():
-            if len(v) == 0:
-                del out[k]
-        return out
 
     def _update_episode(self, episode, season_num, ep_num, ep_key,duration_key):
         self.DLog("UpdateEpisode called for episode ({}, {}) S{}E{}".format(episode, ep_key, season_num, ep_num))

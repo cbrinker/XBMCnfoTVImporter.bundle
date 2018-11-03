@@ -28,6 +28,7 @@ class TestNfoParser(unittest.TestCase):
         ]:
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_premier(xml), _out)
+        self.assertEqual(self.target._get_premier(None), {}) # Don't raise for bad input
 
     def test_get_ratings(self):
         for _in, _out in [
@@ -40,6 +41,7 @@ class TestNfoParser(unittest.TestCase):
         ]:
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_ratings(xml), _out)
+        self.assertEqual(self.target._get_ratings(None), {}) # Don't raise for bad input
 
     def test_parse_rating(self):
         for _in, _out in [
@@ -57,6 +59,7 @@ class TestNfoParser(unittest.TestCase):
         ]:
             self.assertEqual(self.target._parse_rating(_in), _out)
 
+        self.assertEqual(self.target._parse_rating(None), 'NR') # Don't raise for bad input
 
     @patch('Code.nfo_parser.time_convert', side_effect=lambda x:"converted(%s)"%x)
     def test_get_duration_ms(self, mock_time_convert):
@@ -70,6 +73,8 @@ class TestNfoParser(unittest.TestCase):
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_duration_ms(xml), _out)
 
+        self.assertEqual(self.target._get_duration_ms(None), {}) # Don't raise for bad input
+
     def test_get_directors(self):
         for _in, _out in [
             ("<x></x>", {}),
@@ -81,4 +86,53 @@ class TestNfoParser(unittest.TestCase):
             self.assertEqual(self.target._get_directors(xml), _out)
 
         self.assertEqual(self.target._get_directors(None), {}) # Don't raise for bad input
+
+    def test_get_credits(self):
+        for _in, _out in [
+            ("<x></x>", {}),
+            ("<x><credits>c1</credits></x>", {'writers': ['c1']}),
+            ("<x><credits>c1/c2</credits></x>", {'writers': ['c1','c2']}),
+            ("<x><credits>c1</credits><credits>c2</credits></x>", {'writers': ['c1','c2']}),
+            ("<x><credits>(Producer)p1</credits></x>", {'producers': ['p1']}),
+            ("<x><credits>p1(Producer)</credits></x>", {'producers': ['p1']}),
+            ("<x><credits>(Writer)w1</credits></x>", {'writers': ['w1']}),
+            ("<x><credits>w1(Writer)</credits></x>", {'writers': ['w1']}),
+            ("<x><credits>(Guest Star)gs1</credits></x>", {'guest_stars': ['gs1']}),
+            ("<x><credits>gs1(Guest Star)</credits></x>", {'guest_stars': ['gs1']}),
+            ("<x><credits>gs2 (Guest Star)/(Producer)p2</credits></x>", {'producers': ['p2'],'guest_stars':['gs2']}),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_credits(xml), _out)
+        self.assertEqual(self.target._get_credits(None), {}) # Don't raise for bad input
+
+    def test_get_alt_ratings(self):
+        SINGLE_RATING="""<x><ratings>
+            <rating moviedb="p1">a</rating>
+        </ratings></x>"""
+        MULTI_RATING="""<x><ratings>
+            <rating moviedb="p1">a</rating>
+            <rating moviedb="rt">1,1</rating>
+        </ratings></x>"""
+        BAD_RATING="""<x><ratings>
+            <rating>a</rating>
+        </ratings></x>"""
+        for _prefs, _in, _out in [
+            # Feature undefined
+            ({}, None, {}),
+            # Feature off
+            ({'altratings': False}, None, {}),
+            ({'altratings': False}, "<x></x>", {}),
+            # Feature on, default (no filtering)
+            ({'altratings': True}, '<x></x>', {}),
+            ({'altratings': True}, SINGLE_RATING, {'alt_ratings':[('p1','a')]}),
+            ({'altratings': True}, MULTI_RATING,  {'alt_ratings':[('p1','a'),('rt','1.1%')]}),
+            ({'altratings': True}, BAD_RATING,    {}),
+            # Feature on, filtering providers
+            ({'altratings': True, 'ratings':['p1']}, MULTI_RATING, {'alt_ratings':[('p1','a')]}),
+        ]:
+            if isinstance(_in, basestring):
+                _in = ET.fromstring(_in)
+            self.target.prefs=_prefs
+            self.assertEqual(self.target._get_alt_ratings(_in), _out)
+
 

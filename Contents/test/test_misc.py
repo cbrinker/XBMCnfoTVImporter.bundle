@@ -40,27 +40,6 @@ class TestUtilities(unittest.TestCase):
         self.target.DLog("Anything")
         self.Log.assert_not_called()
 
-    def test_get_collections_from_set(self):
-        for _in, _out in [
-            ("<x></x>", []),
-            ("<x><set><name>a_name</name></set></x>", ['a_name']),
-            ("<x><set>a_name</set></x>", ['a_name']),
-        ]:
-            xml = ET.fromstring(_in)
-            self.assertEqual(self.target._get_collections_from_set(xml), _out)
-
-    def test_get_collections_from_tags(self):
-        for _in, _out in [
-            ("<x></x>", []),
-            ("<x><tag>single</tag></x>", ['single']),
-            ("<x><tag>multi</tag><tag>tags</tag></x>", ['multi','tags']),
-            ("<x><tag>mul/ti</tag><tag>ta/gs</tag></x>", ['mul','ti','ta','gs']),
-        ]:
-            xml = ET.fromstring(_in)
-            self.assertEqual(self.target._get_collections_from_tags(xml), _out)
-
-
-
     def test_debug_logging(self):
         msg = "A test message"
         self.Prefs.__getitem__.return_value = 1
@@ -81,9 +60,6 @@ class TestUtilities(unittest.TestCase):
         ]:
                 self.assertEqual(self.target._set_duration_as_avg_of_episodes(_in), _out)
 
-
-
-
     def test_log_function_entry(self):
         self.Prefs.__getitem__.return_value = True
         self.assertEqual(self.target._log_function_entry('AFuncName'), None)
@@ -96,14 +72,6 @@ class TestUtilities(unittest.TestCase):
         self.Log.assert_any_call(AnyStringWith('is disabled'))
 
 
-    def test_generate_id_from_title(self):
-        for _in, _out in [
-                ("short", '115104111114116'),
-                ("superlongstringthatshouldntfail", '3133201520464985288'),
-                ("!@#$%^&*()-=+;", '8726810728445481197'),
-                ("01234567890", '4267046678020928968'),
-        ]:
-                self.assertEqual(self.target._generate_id_from_title(_in), _out)
 
 
 
@@ -249,8 +217,10 @@ class TestSearch(unittest.TestCase):
 
         self.Log.assert_called_with(AnyStringWith('Traceback'))
 
+
+    @patch('Code._generate_id_from_title', return_value='12345')
     @patch('os.path')
-    def test_search_with_guessing(self, mock_path):
+    def test_search_with_guessing(self, mock_path, mock_gen):
         results = Mock()
         pms = Mock()
         pms._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
@@ -258,7 +228,7 @@ class TestSearch(unittest.TestCase):
         #self.target._find_mediafiles_for_id = Mock(side_effect="a_mediafile")
         self.target._extract_info_for_mediafile = Mock(return_value={})
         self.target._guess_title_by_mediafile = Mock(return_value='a_guess')
-        self.target._generate_id_from_title = Mock(return_value='12345')
+#        self.target._generate_id_from_title = Mock(return_value='12345')
 
         self.assertEqual(self.target.search(results, Mock(title=None, id=None), 'alang'), None)
 

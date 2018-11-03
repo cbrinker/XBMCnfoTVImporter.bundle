@@ -142,3 +142,70 @@ class NfoParser(object):
             return {'alt_ratings': alt_ratings}
         else:
             return {}
+
+    def _get_collections_from_set(self, nfo_xml):
+        out = []
+        try:
+            set_xml = nfo_xml.xpath('set')[0]
+            has_names = set_xml.xpath('name')
+            if len(has_names):  # Found enhanced set tag name
+                out.append(has_names[0].text)
+            else:
+                out.append(set_xml.text)
+        except:
+            pass
+        return out
+
+    def _get_collections_from_tags(self, nfo_xml):
+        out = []
+        try:
+            for tag_xml in nfo_xml.xpath('tag'):
+                tags = [x.strip() for x in tag_xml.text.split('/')]
+                for tag in tags:
+                    out.append(tag)
+        except:
+            pass
+        return out
+
+    def _get_actors(self, nfo_xml):
+        out = {}
+        actor_nodes = None
+        try:
+            actor_nodes = nfo_xml.xpath('actor')
+        except:
+            pass
+
+        if not actor_nodes:
+            return out 
+
+        seen_roles = []
+        out['actors'] = []
+        for n, actor_node in enumerate(actor_nodes):
+            actor = {  # Defaulting to unknown
+                'name': 'Unknown Actor {}'.format(n+1),
+                'role': 'Unknown Role {}'.format(n+1),
+            }
+
+            try:
+                actor['name'] = actor_node.xpath('name')[0].text.strip()
+            except:
+                pass
+
+            try:
+                role = actor_node.xpath('role')[0].text.strip()
+                role_seen_count = seen_roles.count(role)
+                if role_seen_count:
+                    actor['role'] = '{} {}'.format(role, role_seen_count+1)
+                else:
+                    actor['role'] = role
+                seen_roles.append(role)
+            except:
+                pass
+
+            try:
+                actor['thumb'] = actor_node.xpath('thumb')[0].text.strip()
+            except:
+                pass
+
+            out['actors'].append(actor)
+        return out

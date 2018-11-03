@@ -106,3 +106,9 @@ def _sanitize_nfo(nfo_text, root_tag, strip_tags=None):
             nfo_text = nfo_text.replace('<{}/>'.format(tag), '')
 
     return nfo_text
+
+def _generate_id_from_title(title):
+    ord3 = lambda x : '%.3d' % ord(x)
+    out = ''.join(map(ord3, title))
+    out = str(abs(hash(int(out))))
+    return out

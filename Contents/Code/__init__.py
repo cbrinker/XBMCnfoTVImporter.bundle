@@ -16,7 +16,7 @@ import urllib
 import urlparse
 import logging
 
-from utils import _get, check_file_paths, remove_empty_tags, unescape, _sanitize_nfo
+from utils import _get, check_file_paths, remove_empty_tags, unescape, _sanitize_nfo, _generate_id_from_title
 
 from pms_gateway import PmsGateway
 from nfo_parser import NfoParser
@@ -115,29 +115,6 @@ class xbmcnfotv(Agent.TV_Shows):
 
         return " | ".join(out)
 
-    def _get_collections_from_set(self, nfo_xml):
-        out = []
-        try:
-            set_xml = nfo_xml.xpath('set')[0]
-            has_names = set_xml.xpath('name')
-            if len(has_names):  # Found enhanced set tag name
-                out.append(has_names[0].text)
-            else:
-                out.append(set_xml.text)
-        except:
-            pass
-        return out
-
-    def _get_collections_from_tags(self, nfo_xml):
-        out = []
-        try:
-            for tag_xml in nfo_xml.xpath('tag'):
-                tags = [x.strip() for x in tag_xml.text.split('/')]
-                for tag in tags:
-                    out.append(tag)
-        except:
-            pass
-        return out
 
 
     def _find_local_photo(self, actor_name, actor_thumb_path):
@@ -201,40 +178,6 @@ class xbmcnfotv(Agent.TV_Shows):
         return actor_thumb
 
 
-    def _get_actors(self, nfo_xml):
-        try:
-            actor_nodes = nfo_xml.xpath('actor')
-        except:
-            return {}
-
-        seen_roles = []
-        actors = []
-        for n, actor in enumerate(actor_nodes):
-            actor = {  # Defaulting to unknown
-                'name': 'Unknown Actor {}'.format(n+1),
-                'role': 'Unknown Role {}'.format(n+1),
-            }
-            try:
-                actor['name'] = actor.xpath('name')[0].text.strip()
-            except:
-                pass
-            try:
-                role = actor.xpath('role')[0].text.strip()
-                role_seen_count = seen_roles.count(role)
-                if role_seen_count:
-                    actor['role'] = '{} {}'.format(role, role_seen_count+1)
-                else:
-                    actor['role'] = role
-                seen_roles.append(role)
-            except:
-                pass
-            try:
-                actor['thumb'] = actor.xpath('thumb')[0].text.strip()
-            except:
-                pass
-            actor['photo'] = self._get_actor_photo(actor['name'], actor.get('thumb')) # empty str, or content
-            actors.append(actor)
-        return {'actors': actors}
 
 
     def _parse_tvshow_nfo_text(self, nfo_text):
@@ -272,20 +215,16 @@ class xbmcnfotv(Agent.TV_Shows):
         out.update(self.parser._get_ratings(nfo_xml))
         out.update(self.parser._get_duration_ms(nfo_xml))
         out.update(self.parser._get_alt_ratings(nfo_xml))
-        out.update(self._get_actors(nfo_xml))
+        out.update(self.parser._get_actors(nfo_xml))
+        #TODO: Fill actor photos via _get_actor_photo()
+        #out['actors'].each(['photo']) = self._get_actor_photo(actor['name'], actor.get('thumb')) # empty str, or content
 
         collections = []
-        collections += self._get_collections_from_set(nfo_xml)
-        collections += self._get_collections_from_tags(nfo_xml)
+        collections += self.parser._get_collections_from_set(nfo_xml)
+        collections += self.parser._get_collections_from_tags(nfo_xml)
         if len(collections):
             out['collections'] = collections
 
-        return out
-
-    def _generate_id_from_title(self, title):
-        ord3 = lambda x : '%.3d' % ord(x)
-        out = ''.join(map(ord3, title))
-        out = str(abs(hash(int(out))))
         return out
 
 
@@ -331,7 +270,7 @@ class xbmcnfotv(Agent.TV_Shows):
                 if title_guess:
                     record['title'] = title_guess
         if not record['id']:
-            record['id'] = self._generate_id_from_title(record['title'])
+            record['id'] = _generate_id_from_title(record['title'])
 
         Log("Scraped results: %s" % record)
         if True:
@@ -585,13 +524,13 @@ class xbmcnfotv(Agent.TV_Shows):
         out.update(self.parser._get_ratings(nfo_xml))
         out.update(self.parser._get_duration_ms(nfo_xml))
         out.update(self.parser._get_alt_ratings(nfo_xml))
-        #out.update(self._get_actors(nfo_xml))
+        #out.update(self.parser._get_actors(nfo_xml))
         out.update(self.parser._get_directors(nfo_xml))
         out.update(self.parser._get_credits(nfo_xml))
 
         #collections = []
-        #collections += self._get_collections_from_set(nfo_xml)
-        #collections += self._get_collections_from_tags(nfo_xml)
+        #collections += self.parser._get_collections_from_set(nfo_xml)
+        #collections += self.parser._get_collections_from_tags(nfo_xml)
         #if len(collections):
         #    out['collections'] = collections
 

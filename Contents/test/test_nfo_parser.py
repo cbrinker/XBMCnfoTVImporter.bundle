@@ -136,3 +136,52 @@ class TestNfoParser(unittest.TestCase):
             self.assertEqual(self.target._get_alt_ratings(_in), _out)
 
 
+    def test_get_collections_from_set(self):
+        for _in, _out in [
+            ("<x></x>", []),
+            ("<x><set><name>a_name</name></set></x>", ['a_name']),
+            ("<x><set>a_name</set></x>", ['a_name']),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_collections_from_set(xml), _out)
+        self.assertEqual(self.target._get_collections_from_set(None), []) # Don't raise for bad input
+
+    def test_get_collections_from_tags(self):
+        for _in, _out in [
+            ("<x></x>", []),
+            ("<x><tag>single</tag></x>", ['single']),
+            ("<x><tag>multi</tag><tag>tags</tag></x>", ['multi','tags']),
+            ("<x><tag>mul/ti</tag><tag>ta/gs</tag></x>", ['mul','ti','ta','gs']),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_collections_from_tags(xml), _out)
+        self.assertEqual(self.target._get_collections_from_tags(None), []) # Don't raise for bad input
+
+    def test_get_actors(self):
+        NO_ACTOR="""<x>
+        </x>"""
+        SINGLE_ACTOR="""<x>
+            <actor><name>aname</name><role>arole</role><thumb>athumb</thumb></actor>
+        </x>"""
+        MULTI_ACTOR="""<x>
+            <actor><name>aname</name><role>arole</role></actor>
+            <actor><name> 2name </name><role> 2role </role></actor>
+        </x>"""
+        REUSED_ROLE="""<x>
+            <actor><name>name1</name><role>kid</role></actor>
+            <actor><name>name2</name><role>kid</role></actor>
+        </x>"""
+        UNKNOWN_ACTOR="""<x>
+            <actor></actor>
+        </x>"""
+        for _in, _out in [
+            (NO_ACTOR, {}),
+            (SINGLE_ACTOR,  {'actors':[{'role':'arole','name':'aname','thumb':'athumb'}]}),
+            (MULTI_ACTOR,   {'actors':[{'role':'arole','name':'aname'},{'role':'2role','name':'2name'}]}),
+            (REUSED_ROLE,   {'actors':[{'role':'kid','name':'name1'},{'role':'kid 2','name':'name2'}]}),
+            (UNKNOWN_ACTOR, {'actors':[{'role':'Unknown Role 1','name':'Unknown Actor 1'}]}),
+        ]:
+            xml = ET.fromstring(_in)
+            self.assertEqual(self.target._get_actors(xml), _out)
+        self.assertEqual(self.target._get_actors(None), {}) # Don't raise for bad input
+

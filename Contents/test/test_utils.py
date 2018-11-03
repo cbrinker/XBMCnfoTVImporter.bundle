@@ -123,5 +123,15 @@ class TestUtilities(unittest.TestCase):
         ]:
                 self.assertEqual(target._sanitize_nfo(_in, 'y', ['x']), _out)
 
+    def test_generate_id_from_title(self):
+        import Code.utils as target
+        for _in, _out in [
+                ("short", '115104111114116'),
+                ("superlongstringthatshouldntfail", '3133201520464985288'),
+                ("!@#$%^&*()-=+;", '8726810728445481197'),
+                ("01234567890", '4267046678020928968'),
+        ]:
+                self.assertEqual(target._generate_id_from_title(_in), _out)
+
 if __name__ == '__main__':
     unittest.main()

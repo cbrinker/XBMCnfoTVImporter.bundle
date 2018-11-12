@@ -11,7 +11,7 @@ class AnyStringWith(str):
 
 class TestNfoParser(unittest.TestCase):
     def setUp(self):
-        for name in ['Locale', 'Agent']:
+        for name in ['Locale', 'Agent','XML']:
             patcher = patch("__builtin__."+name, create=True)
             setattr(self, name, patcher.start())
             self.addCleanup(patcher.stop)
@@ -184,4 +184,35 @@ class TestNfoParser(unittest.TestCase):
             xml = ET.fromstring(_in)
             self.assertEqual(self.target._get_actors(xml), _out)
         self.assertEqual(self.target._get_actors(None), {}) # Don't raise for bad input
+
+    def test_parse_tvshow_nfo_text(self):
+        tv_mock = MagicMock()
+        tv_mock.xpath.side_effect=lambda x: [Mock(text=inputs[x])]
+        self.XML.ElementFromString.return_value.xpath.return_value = [tv_mock]
+        self.target._get_collections_from_set = Mock(side_effect=lambda x:['col1'])
+
+        # Bestcase
+        inputs = { 'id':'a', 'sorttitle':'b', 'title':'c', 'year':'1', 'extra':'a'}
+        outputs = { 'id':'a', 'sorttitle':'b', 'title':'c', 'year':1, 'collections':['col1']}
+        self.assertEqual(self.target._parse_tvshow_nfo_text("_"), outputs)
+
+        # bad year
+        self.target._get_collections_from_set = Mock(side_effect=lambda x:[])
+        inputs = { 'id':'a', 'sorttitle':'b', 'title':'c', 'year':'nondigit', 'extra':'a'}
+        outputs = { 'id':'a', 'sorttitle':'b', 'title':'c', }
+        self.assertEqual(self.target._parse_tvshow_nfo_text("_"), outputs)
+        #self.Log.assert_called_once_with(AnyStringWith('<year>'))
+
+        # all bad
+        inputs = {}
+        outputs = {}
+        self.assertEqual(self.target._parse_tvshow_nfo_text("_"), outputs)
+
+
+    @patch('Code.nfo_parser.logging')
+    def test_parse_tvshow_nfo_text_parse_error(self, mock_logging):
+        self.XML.ElementFromString.side_effect = Exception()
+        self.assertEqual(self.target._parse_tvshow_nfo_text("_"), {})
+        mock_logging.error.assert_called_once_with(AnyStringWith('failed parsing'))
+
 

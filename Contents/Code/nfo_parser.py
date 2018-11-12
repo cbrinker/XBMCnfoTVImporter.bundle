@@ -1,7 +1,7 @@
 import logging
 import re
 
-from utils import _get, _parse_dt, time_convert
+from utils import _get, _parse_dt, time_convert, remove_empty_tags
 
 
 class NfoParser(object):
@@ -176,7 +176,7 @@ class NfoParser(object):
             pass
 
         if not actor_nodes:
-            return out 
+            return out
 
         seen_roles = []
         out['actors'] = []
@@ -208,4 +208,51 @@ class NfoParser(object):
                 pass
 
             out['actors'].append(actor)
+        return out
+
+    def _parse_tvshow_nfo_text(self, nfo_text):
+        out = {}
+        try:
+            nfo_xml = XML.ElementFromString(nfo_text).xpath('//tvshow')[0]
+        except:
+            logging.error('ERROR: failed parsing tvshow XML in nfo file')
+            return out
+
+        nfo_xml = remove_empty_tags(nfo_xml)
+
+        for xml_key, out_key, cast in [
+            ('id','id', None),
+            ('sorttitle','sorttitle', None),
+            ('title','title', None),
+            ('studio','studio', None),
+            ('originaltitle','original_title', None),
+            ('year','year', int),
+            ('tagline','tagline', None), # Not supported by TVShow obj?
+            ('mpaa','content_rating', self._parse_rating),
+            ('genre','genres', lambda x:[y.strip() for y in x.split("/")]),
+            ('status','status',lambda x: x.strip()),
+            ('plot','plot', None), 
+        ]:
+            try:
+                value = nfo_xml.xpath(xml_key)[0].text
+                if cast:
+                    value = cast(value)
+                out[out_key] = value
+            except:
+                logging.debug("No <%s> tag found in nfo file." % out_key)
+
+        out.update(self._get_premier(nfo_xml))
+        out.update(self._get_ratings(nfo_xml))
+        out.update(self._get_duration_ms(nfo_xml))
+        out.update(self._get_alt_ratings(nfo_xml))
+        out.update(self._get_actors(nfo_xml))
+        #TODO: Fill actor photos via _get_actor_photo()
+        #out['actors'].each(['photo']) = self._get_actor_photo(actor['name'], actor.get('thumb')) # empty str, or content
+
+        collections = []
+        collections += self._get_collections_from_set(nfo_xml)
+        collections += self._get_collections_from_tags(nfo_xml)
+        if len(collections):
+            out['collections'] = collections
+
         return out

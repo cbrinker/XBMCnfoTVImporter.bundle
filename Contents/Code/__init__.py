@@ -178,56 +178,6 @@ class xbmcnfotv(Agent.TV_Shows):
         return actor_thumb
 
 
-
-
-    def _parse_tvshow_nfo_text(self, nfo_text):
-        out = {}
-        try:
-            nfo_xml = XML.ElementFromString(nfo_text).xpath('//tvshow')[0]
-        except:
-            Log('ERROR: failed parsing tvshow XML in nfo file')
-            return out
-
-        nfo_xml = remove_empty_tags(nfo_xml)
-
-        for xml_key, out_key, cast in [
-            ('id','id', None),
-            ('sorttitle','sorttitle', None),
-            ('title','title', None),
-            ('studio','studio', None),
-            ('originaltitle','original_title', None),
-            ('year','year', int),
-            ('tagline','tagline', None), # Not supported by TVShow obj?
-            ('mpaa','content_rating', self.parser._parse_rating),
-            ('genre','genres', lambda x:[y.strip() for y in x.split("/")]),
-            ('status','status',lambda x: x.strip()),
-            ('plot','plot', None), 
-        ]:
-            try:
-                value = nfo_xml.xpath(xml_key)[0].text
-                if cast:
-                    value = cast(value)
-                out[out_key] = value
-            except:
-                self.DLog("No <%s> tag found in nfo file." % out_key)
-
-        out.update(self.parser._get_premier(nfo_xml))
-        out.update(self.parser._get_ratings(nfo_xml))
-        out.update(self.parser._get_duration_ms(nfo_xml))
-        out.update(self.parser._get_alt_ratings(nfo_xml))
-        out.update(self.parser._get_actors(nfo_xml))
-        #TODO: Fill actor photos via _get_actor_photo()
-        #out['actors'].each(['photo']) = self._get_actor_photo(actor['name'], actor.get('thumb')) # empty str, or content
-
-        collections = []
-        collections += self.parser._get_collections_from_set(nfo_xml)
-        collections += self.parser._get_collections_from_tags(nfo_xml)
-        if len(collections):
-            out['collections'] = collections
-
-        return out
-
-
     def _extract_info_for_mediafile(self, mediafile):
         out = {}
         nfo_file = self._find_nfo_for_file(mediafile, algo='tvshow')
@@ -236,7 +186,7 @@ class xbmcnfotv(Agent.TV_Shows):
             Log("Found nfo file at '%s', parsing" % nfo_file)
             nfo_text = Core.storage.load(nfo_file)
             nfo_text = _sanitize_nfo(nfo_text, 'tvshow')
-            out.update(self._parse_tvshow_nfo_text(nfo_text))
+            out.update(self.parser._parse_tvshow_nfo_text(nfo_text))
         return out
 
 

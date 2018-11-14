@@ -91,30 +91,45 @@ class xbmcnfotv(Agent.TV_Shows):
         self.DLog("Title guess of: '%s'" % out)
         return out
 
-
-
-    def _build_show_summary(self, data):
+    def _build_show_summary(self,
+        data,
+        show_status = False,
+        pre_rating = '', 
+        post_rating = '', 
+        ratings_pos = 'front',
+        preserve_rating = False,
+    ):
         out = []
-        if Prefs['statusinsummary']:
-            out.append('Status: {}'.format(data['status']))
 
-        out.append(data['plot'])
+        star = unescape("&#9733;")
+        sep = " | "
+        status      = _get(data, 'status')
+        plot        = _get(data, 'plot')
+        alt_ratings = _get(data, 'alt_ratings')
+        rating      = _get(data, 'rating', 0.0)
 
-        alt_ratings = " | ".join("{}: {}".format(source, rating) for source, rating in data['alt_ratings'])
+        if show_status and status:
+            out.append('Status: {}'.format(status))
 
-        #if Prefs['ratingspos'] == "front":
-        #    if Prefs['preserverating']:
-        #        metadata.summary = alt_ratings + unescape(" &#9733;\n\n") + metadata.summary
-        #    else:
-        #        metadata.summary = unescape("&#9733; ") + alt_ratings + unescape(" &#9733;\n\n") + metadata.summary
-        #else:
-        #    metadata.summary = metadata.summary + unescape("\n\n&#9733; ") + alt_ratings + unescape(" &#9733;")
-        #if Prefs['preserverating']:
-        #    tmp = unescape("{}{:.1f}{}".format(Prefs['beforerating'], data['rating'], Prefs['afterrating']))
-        #    out.insert(0, tmp)
+        if plot:
+            out.append(plot)
 
-        return " | ".join(out)
+        if alt_ratings:
+            buf = []
+            for source, _rating in alt_ratings:
+                buf.append("{}: {}".format(source, _rating))
+            piece = sep.join(buf)
 
+            if ratings_pos == 'front':
+                out.insert(0, star+" "+piece+" "+star+"\n\n")
+            else:
+                out.append("\n\n"+star+" "+piece+" "+star)
+
+        if preserve_rating:
+            tmp = unescape("{}{:.1f}{}".format(pre_rating, rating, post_rating))
+            out.insert(0, tmp)
+
+        return sep.join(out)
 
 
     def _find_local_photo(self, actor_name, actor_thumb_path):
@@ -699,7 +714,14 @@ class xbmcnfotv(Agent.TV_Shows):
             record['duration'] = self._set_duration_as_avg_of_episodes(Dict[duration_key])
         Dict.Reset()
 
-        record['summary'] = self._build_show_summary(record)  # Summaries are complicated
+        record['summary'] = self._build_show_summary(
+            record,
+            _get(Prefs, 'statusinsummary'),
+            _get(Prefs, 'beforerating'),
+            _get(Prefs, 'afterrating'),
+            _get(Prefs, 'ratingspos'),
+            _get(Prefs, 'preserverating'),
+        )  # Summaries are complicated
 
         if True:
             #Transfer data to the metadata object

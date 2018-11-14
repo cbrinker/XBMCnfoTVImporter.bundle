@@ -129,6 +129,40 @@ class TestUtilities(MyPlexTester):
         self.target._find_nfo_for_file = Mock(return_value = None)
         self.assertEqual(self.target._extract_info_for_mediafile("afile.ext"), {})
 
+    def test_build_show_summary(self):
+        DATA_EMPTY            = []
+        DATA_ONLY_STATUS      = [('status', 'good')]
+        DATA_ONLY_PLOT        = [('plot', 'has holes')]
+        DATA_ONLY_RATING      = [('rating', 1.1)]
+        DATA_ONLY_ALT_RATINGS = [('alt_ratings',[('imdb',9.9)])]
+        DATA_FULL             = DATA_ONLY_STATUS + DATA_ONLY_PLOT + DATA_ONLY_RATING + DATA_ONLY_ALT_RATINGS
+
+        OPTS_EMPTY = {}
+        OPTS_ALL = {
+            'show_status': True,
+            'pre_rating': '>',
+            'post_rating': '<',
+            'ratings_pos': 'end',
+            'preserve_rating': True,
+        }
+
+        for _data, _opts, _out in [
+            (dict(DATA_EMPTY),            OPTS_EMPTY, u''),
+            (dict(DATA_ONLY_STATUS),      OPTS_EMPTY, u''),
+            (dict(DATA_ONLY_PLOT),        OPTS_EMPTY, u'has holes'),
+            (dict(DATA_ONLY_RATING),      OPTS_EMPTY, u''),
+            (dict(DATA_ONLY_ALT_RATINGS), OPTS_EMPTY, u'\u2605 imdb: 9.9 \u2605\n\n'),
+            (dict(DATA_FULL),             OPTS_EMPTY, u'\u2605 imdb: 9.9 \u2605\n\n | has holes'),
+
+            (dict(DATA_EMPTY),            OPTS_ALL, u'>0.0<'),
+            (dict(DATA_ONLY_STATUS),      OPTS_ALL, u'>0.0< | Status: good'),
+            (dict(DATA_ONLY_PLOT),        OPTS_ALL, u'>0.0< | has holes'),
+            (dict(DATA_ONLY_RATING),      OPTS_ALL, u'>1.1<'),
+            (dict(DATA_ONLY_ALT_RATINGS), OPTS_ALL, u'>0.0< | \n\n\u2605 imdb: 9.9 \u2605'),
+            (dict(DATA_FULL),             OPTS_ALL, u'>1.1< | Status: good | has holes | \n\n\u2605 imdb: 9.9 \u2605'),
+        ]:
+            self.assertEqual(self.target._build_show_summary(_data, **_opts), _out)
+
 
     #def test_update(self):
     #    mock_path = self.patch('os.path')

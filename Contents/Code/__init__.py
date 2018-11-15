@@ -12,7 +12,6 @@
 # Season banner and season art support by Christian
 #
 import os, re, time, datetime, platform, traceback, glob, re, htmlentitydefs
-import urllib
 import logging
 
 from utils import _get, check_file_paths, remove_empty_tags, unescape, _sanitize_nfo, _generate_id_from_title
@@ -145,6 +144,7 @@ class xbmcnfotv(Agent.TV_Shows):
             self.parser._parse_tvshow_nfo_text(out, nfo_file)
 
             for actor in _get(out, 'actors', []):
+                self.media_finder.nfo_file = nfo_file  # Just in case we need to do local file probing
                 photo = self.media_finder._get_actor_photo(actor['name'], actor.get('thumb')) # empty str, or content
                 if photo:
                     actor['photo'] = photo

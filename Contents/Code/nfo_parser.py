@@ -5,6 +5,7 @@ from utils import _get, _parse_dt, time_convert, remove_empty_tags
 
 
 class NfoParser(object):
+
     def __init__(self, Prefs):
         self.prefs = Prefs
 
@@ -246,8 +247,6 @@ class NfoParser(object):
         out.update(self._get_duration_ms(nfo_xml))
         out.update(self._get_alt_ratings(nfo_xml))
         out.update(self._get_actors(nfo_xml))
-        #TODO: Fill actor photos via _get_actor_photo()
-        #out['actors'].each(['photo']) = self._get_actor_photo(actor['name'], actor.get('thumb')) # empty str, or content
 
         collections = []
         collections += self._get_collections_from_set(nfo_xml)

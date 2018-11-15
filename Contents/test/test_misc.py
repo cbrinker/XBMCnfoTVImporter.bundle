@@ -163,7 +163,6 @@ class TestUtilities(MyPlexTester):
         ]:
             self.assertEqual(self.target._build_show_summary(_data, **_opts), _out)
 
-
     #def test_update(self):
     #    mock_path = self.patch('os.path')
     #    results = MagicMock()

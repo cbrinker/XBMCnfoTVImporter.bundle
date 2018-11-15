@@ -13,13 +13,13 @@
 #
 import os, re, time, datetime, platform, traceback, glob, re, htmlentitydefs
 import urllib
-import urlparse
 import logging
 
 from utils import _get, check_file_paths, remove_empty_tags, unescape, _sanitize_nfo, _generate_id_from_title
 
 from pms_gateway import PmsGateway
 from nfo_parser import NfoParser
+from media_finder import MediaFinder
 
 
 class xbmcnfotv(Agent.TV_Shows):
@@ -33,6 +33,7 @@ class xbmcnfotv(Agent.TV_Shows):
     def __init__(self):
         self.pms = PmsGateway(XML, String)
         self.parser = NfoParser(Prefs)
+        self.media_finder = MediaFinder(Prefs)
 
 ##### helper functions #####
     def DLog(self, LogMessage):
@@ -132,67 +133,6 @@ class xbmcnfotv(Agent.TV_Shows):
         return sep.join(out)
 
 
-    def _find_local_photo(self, actor_name, actor_thumb_path):
-        #TODO: Fix this up when unit testing. The nfo_file is not defined
-        actor_image_filename = actor_name.replace(' ', '_') + '.jpg'
-        local_path = os.path.join(os.path.dirname(nfo_file), '.actors', actor_image_filename)
-        if not os.path.isfile(local_path):
-            return None
-
-        # file:///dir/dir/ ???
-        _, _, spath, _, _ = urlparse.urlsplit(actor_thumb_path)
-        basepath = os.path.basename(spath)
-        search_pos = spath.find(basepath)
-        add_pos = search_pos + len(basepath)
-        add_path = os.path.dirname(spath)[add_pos:]
-        if search_pos != -1 and add_path !='':
-            pass
-        else:
-            add_path = ''
-        return actor_thumb_path + add_path + '/' + basepath + '/.actors/' + actor_image_filename
-
-
-    def _find_global_photo(self, actor_name, actor_thumb_path):
-        #TODO: Fix this up when unit testing. The code didn't originally work
-        actor_image_filename = actor_name.replace(' ', '_') + '.jpg'
-        actor_image_path = actor_thumb_path + '/' + actor_image_filename
-
-        # Let's actually hit the URL
-        scheme, netloc, spath, qs, anchor = urlparse.urlsplit(actor_image_path)
-        spath = urllib.quote(spath, '/%')
-        qs = urllib.quote_plus(qs, ':&=')
-        actor_image_path_url = urlparse.urlunsplit((scheme, netloc, spath, qs, anchor))
-        response = urllib.urlopen(actor_image_path_url).code
-        if not response == 200:
-            return None
-
-        return actor_image_path
-
-
-    def _get_actor_photo(self, actor_name, actor_thumb):
-
-        if not actor_name:  # Without and actor name, default to thumb
-            return actor_thumb
-
-        actor_thumb_path = Prefs['athumbpath'].rstrip('/')  # Need to avoid empty here
-        if actor_thumb_path == "":
-            return actor_thumb
-
-        actor_thumb_engine = Prefs['athumblocation']
-        if actor_thumb_engine == 'local':
-            local_path = self._find_local_photo(actor_name, actor_thumb_path)
-            if local_path:
-                return local_path
-        elif actor_thumb_engine == 'global':
-            global_path = self._find_global_photo(actor_name, actor_thumb_path)
-            if global_path:
-                return global_path
-        elif actor_thumb_engine == 'link':
-            pass
-
-        return actor_thumb
-
-
     def _extract_info_for_mediafile(self, mediafile):
         out = {}
         nfo_file = self._find_nfo_for_file(mediafile, algo='tvshow')
@@ -202,6 +142,13 @@ class xbmcnfotv(Agent.TV_Shows):
             nfo_text = Core.storage.load(nfo_file)
             nfo_text = _sanitize_nfo(nfo_text, 'tvshow')
             out.update(self.parser._parse_tvshow_nfo_text(nfo_text))
+            self.parser._parse_tvshow_nfo_text(out, nfo_file)
+
+            for actor in _get(out, 'actors', []):
+                photo = self.media_finder._get_actor_photo(actor['name'], actor.get('thumb')) # empty str, or content
+                if photo:
+                    actor['photo'] = photo
+
         return out
 
 

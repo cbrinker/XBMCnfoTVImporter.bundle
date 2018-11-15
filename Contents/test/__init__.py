@@ -36,6 +36,8 @@ class MyPlexTester(PatchMixin, unittest.TestCase):
     pass
 
 def PrepareForPlexTest():
+    """Going to mock out all of the things a
+    plex module thinks automatically exist"""
 
     for patch_name, patch_obj in [
         ('__builtin__.Agent', MagicMock(TV_Shows=object)),
@@ -50,6 +52,6 @@ def PrepareForPlexTest():
         ('__builtin__.XML', MagicMock()),
         ('Code.parallelize', MagicMock()),
     ]:
-        name = patch_name.split(".")[-1]
+        name = patch_name.split(".")[-1]  # Hacky way to get names for reference
         patcher = patch(patch_name, patch_obj, create=True)
         globals()[name] = patcher.start()  # Inject into calling module

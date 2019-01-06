@@ -4,12 +4,10 @@ from mock import Mock, MagicMock, patch
 
 from lxml import etree as ET
 
-class AnyStringWith(str):
-    def __eq__(self, other):
-        return self in other
+from test import MyPlexTester, AnyStringWith
 
 
-class TestNfoParser(unittest.TestCase):
+class TestNfoParser(MyPlexTester):
     def setUp(self):
         for name in ['Locale', 'Agent','XML']:
             patcher = patch("__builtin__."+name, create=True)
@@ -209,8 +207,10 @@ class TestNfoParser(unittest.TestCase):
         self.assertEqual(self.target._parse_tvshow_nfo_text("_"), outputs)
 
 
-    @patch('Code.nfo_parser.logging')
-    def test_parse_tvshow_nfo_text_parse_error(self, mock_logging):
+    #@patch('Code.nfo_parser.logging')
+    def test_parse_tvshow_nfo_text_parse_error(self):
+        mock_logging = self.patch('Code.nfo_parser.logging')
+
         self.XML.ElementFromString.side_effect = Exception()
         self.assertEqual(self.target._parse_tvshow_nfo_text("_"), {})
         mock_logging.error.assert_called_once_with(AnyStringWith('failed parsing'))

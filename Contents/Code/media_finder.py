@@ -38,27 +38,38 @@ class MediaFinder(object):
         return actor_thumb
 
     def _find_local_photo(self, actor_name, actor_thumb_path):
-        actor_image_filename = actor_name.replace(' ', '_') + '.jpg'
+        if not self.nfo_file:
+            logging.debug('Attempted lookup of local photo failed, no nfo_dir specified')
+            return None
+
+        actor_image_filename = self._get_filename(actor_name)
         local_path = os.path.join(os.path.dirname(self.nfo_file), '.actors', actor_image_filename)
         if not os.path.isfile(local_path):
             return None
 
         # file:///dir/dir/ ???
-        _, _, spath, _, _ = urlparse.urlsplit(actor_thumb_path)
-        basepath = os.path.basename(spath)
-        search_pos = spath.find(basepath)
-        add_pos = search_pos + len(basepath)
-        add_path = os.path.dirname(spath)[add_pos:]
-        if search_pos != -1 and add_path !='':
-            pass
+        _, _, spath, _, _ = urlparse.urlsplit(actor_thumb_path) # /my/thumbs
+        basepath = os.path.basename(spath)          # thumbs
+        logging.debug('Searching for additional path parts after: ', basepath)
+        found_pos = spath.find(basepath)            # 4
+        add_pos = found_pos + len(basepath)         # 4 + 6 = 10
+        add_path = os.path.dirname(spath)[add_pos:] # ''
+        print(spath, basepath, found_pos, add_pos, add_path)
+        if found_pos != -1 and add_path !='':
+            logging.debug('Found additional path parts: ' + add_path)
         else:
+            logging.debug('Found no additional path parts')
             add_path = ''
-        return actor_thumb_path + add_path + '/' + basepath + '/.actors/' + actor_image_filename
+        local_path = actor_thumb_path + add_path + '/' + basepath + '/.actors/' + actor_image_filename
+        if not os.path.isfile(local_path):
+            return None
 
+    def _get_filename(self, actor_name):
+        return actor_name.replace(' ', '_') + '.jpg'
 
     def _find_global_photo(self, actor_name, actor_thumb_path):
         #TODO: Fix this up when unit testing. The code didn't originally work
-        actor_image_filename = actor_name.replace(' ', '_') + '.jpg'
+        actor_image_filename = self._get_filename(actor_name)
         actor_image_path = actor_thumb_path + '/' + actor_image_filename
 
         # Let's actually hit the URL

@@ -38,16 +38,33 @@ class TestGetActorPhoto(MyPlexTester):
 
     def test_find_local_photo(self):
         target = media_finder.MediaFinder(object)
-        target.nfo_file = "/a/path/somewhere.nfo"
+        mock_logging = self.patch('Code.media_finder.logging')
 
         mock_path = self.patch('os.path')
         mock_path.join     = Mock(side_effect = lambda *args: "/".join(args))
         mock_path.dirname  = Mock(side_effect = lambda x: x.rsplit("/",1)[0])
         mock_path.basename = Mock(side_effect = lambda x: x.rsplit("/",1)[-1])
 
+        # sad: bad input
+        target.nfo_file = None
+        self.assertEqual(target._find_local_photo('',''), None)
+        mock_logging.debug.assert_called_once_with(AnyStringWith('local photo failed'))
+
+        # sad: no file found
+        target.nfo_file = "/a/path/somewhere.nfo"
         mock_path.isfile = Mock(return_value = False)
         self.assertEqual(target._find_local_photo('',''), None)
 
+        # happy: basic success
         mock_path.isfile = Mock(return_value = True)
-        #TODO Need to clean this up
-        self.assertEqual(target._find_local_photo('J Smith','/actor/thumbs'), '/actor/thumbs/thumbs/.actors/J_Smith.jpg')
+        #self.assertEqual(target._find_local_photo('J Smith','/a/media'), '/my/thumbs/.actors/J_Smith.jpg')
+        #self.assertEqual(target._find_local_photo('J Smith','file:///a/media'), '/my/thumbs/.actors/J_Smith.jpg')
+        #mock_logging.debug.assert_called_once_with(AnyStringWith('earching for addition'))
+
+    def test_get_filename(self):
+        target = media_finder.MediaFinder(object)
+        for _in, _out in [
+            ("Bob Smith", "Bob_Smith.jpg"),
+            ("B0b S&i'h", "B0b_S&i'h.jpg"),
+        ]:
+            self.assertEqual(target._get_filename(_in), _out)
